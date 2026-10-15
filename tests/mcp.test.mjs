@@ -215,6 +215,15 @@ describe("scoping", () => {
 		assert.equal(await m.Campaign.countDocuments({ accountId: owner.accountId, subject: "Not allowed" }), 0);
 	});
 
+	test("a read key sees and can call the campaign reads only", async () => {
+		const { key } = await as(owner, () => m.apiKeys.createApiKey(null, form({ name: "Reader site", level: "read" })));
+		const { body } = await mcp(key, "tools/list");
+		assert.deepEqual(body.result.tools.map(({ name }) => name).toSorted(), ["get_campaign", "list_campaigns"]);
+		const { body: refused } = await mcp(key, "tools/call", { name: "create_campaign", arguments: { subject: "Not allowed either" } });
+		assert.match(refused.error?.message ?? refused.result?.content[0].text, /create_campaign/, "the tool doesn't exist for this key");
+		assert.equal(await m.Campaign.countDocuments({ accountId: owner.accountId, subject: "Not allowed either" }), 0);
+	});
+
 	test("another account's key never reaches this account's data", async () => {
 		const ownCampaign = await m.Campaign.findOne({ accountId: owner.accountId, subject: "From an agent" }).lean();
 		assert.equal(parseError(await callTool(stranger.fullKey, "get_campaign", { id: String(ownCampaign._id) })).code, "not_found");

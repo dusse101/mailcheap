@@ -15,6 +15,7 @@ export default function AuthenticationPage() {
 	const appUrl = getAppUrl();
 	const limited = ACTIONS.filter(({ rateLimit }) => rateLimit);
 	const signupsOnly = ACTIONS.filter(({ permission }) => permission === "signups");
+	const readArchive = ACTIONS.filter(({ permission }) => permission === "read");
 
 	return (
 		<>
@@ -36,7 +37,7 @@ export default function AuthenticationPage() {
 				<BlockCode title="Header" className="mt-4" code="Authorization: Bearer mc_…" />
 			</Section>
 
-			<Section title="Two levels" stagger={2}>
+			<Section title="Three levels" stagger={2}>
 				<div className="overflow-hidden rounded-xl shadow-border">
 					<table className="w-full text-left text-sm">
 						<thead>
@@ -60,11 +61,18 @@ export default function AuthenticationPage() {
 									It can go in a web page: that endpoint answers browsers, and the key can&apos;t read or send anything.
 								</td>
 							</tr>
+							<tr>
+								<td className="py-3 pr-4 pl-4 font-medium whitespace-nowrap">Read archive</td>
+								<td className="py-3 pr-4 text-muted-foreground">
+									Only {readArchive.map(({ name }) => name).join(" and ")}, and only for issues on a public archive: drafts, scheduled
+									issues and newsletters with the archive off stay hidden. For a server that shows your issues on your own site.
+								</td>
+							</tr>
 						</tbody>
 					</table>
 				</div>
 				<p className="mt-4">
-					A signups only key calling anything else gets <Code>403 forbidden</Code>. Keys made before levels existed are signups only.
+					A signups only or read archive key calling anything else gets <Code>403 forbidden</Code>. Keys made before levels existed are signups only.
 					Revoked keys get <Code>401 unauthorized</Code>.
 				</p>
 			</Section>

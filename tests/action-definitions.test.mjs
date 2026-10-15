@@ -57,6 +57,14 @@ test("path parameters and key levels", () => {
 	assert.equal(getKeyLevel({ level: "signups" }), "signups");
 	assert.equal(getKeyLevel({}), "signups", "keys from before levels");
 	assert.equal(getKeyLevel({ level: "FULL" }), "signups");
+	const read = defineAction({ ...valid, name: "read_thing", permission: "read" });
+	assert.equal(canKeyUse("read", read), true);
+	assert.equal(canKeyUse("read", defineAction(valid)), false);
+	assert.equal(canKeyUse("read", signups), false);
+	assert.equal(canKeyUse("signups", read), false);
+	assert.equal(canKeyUse("full", read), true);
+	assert.equal(getKeyLevel({ level: "read" }), "read");
+	assert.throws(() => defineAction({ ...valid, name: "write_thing", permission: "read", readOnly: false }), /read-only action/);
 });
 
 test("errors keep known codes and hide the rest", () => {

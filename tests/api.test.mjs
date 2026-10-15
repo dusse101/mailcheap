@@ -163,6 +163,61 @@ describe("key levels", () => {
 		assert.equal(await m.ApiKey.countDocuments({ accountId: user.accountId, name: "Escalate" }), 0);
 	});
 
+	test("a read key gets the issues on the public archive and nothing else", async () => {
+		const user = await customer("read-key@example.com");
+		const readKey = await createKey(user, "read");
+		const live = await draft(user, { subject: "Out there" });
+		const unlisted = await draft(user, { subject: "Unlisted" });
+		const pending = await draft(user, { subject: "Still a draft" });
+		await m.Newsletter.updateOne({ _id: user.newsletterId, accountId: user.accountId }, { $set: { archiveEnabled: true } });
+		await m.Campaign.updateOne({ _id: live, accountId: user.accountId }, { $set: { status: "sent", sentAt: new Date(), archiveSlug: "out-there" } });
+		await m.Campaign.updateOne({ _id: unlisted, accountId: user.accountId }, { $set: { status: "sent", sentAt: new Date(), archiveSlug: "unlisted", archiveListed: false } });
+
+		const listed = await api(readKey, "GET", `/campaigns?newsletter=${user.slug}&status=sent`);
+		assert.equal(listed.status, 200);
+		assert.deepEqual(listed.body.campaigns.map(({ id }) => id), [live]);
+		assert.deepEqual((await api(readKey, "GET", "/campaigns")).body.campaigns.map(({ id }) => id), [live]);
+		assert.deepEqual((await api(readKey, "GET", "/campaigns?status=draft")).body.campaigns, []);
+		const issue = await api(readKey, "GET", `/campaigns/${live}`);
+		assert.equal(issue.status, 200);
+		assert.equal(issue.body.subject, "Out there");
+		assert.match(issue.body.content, /readers/);
+		assert.equal((await api(readKey, "GET", `/campaigns/${unlisted}`)).status, 200, "an unlisted issue's page is public by its URL");
+		assertError(await api(readKey, "GET", `/campaigns/${pending}`), 404, "not_found");
+		assert.equal((await api(user.key, "GET", "/campaigns")).body.campaigns.length, 3, "a full access key still sees drafts");
+
+		for (const [method, path, body] of [
+			["GET", "/overview"],
+			["GET", "/newsletters"],
+			["PATCH", `/newsletters/${user.newsletterId}`, { name: "Renamed" }],
+			["GET", `/campaigns/${live}/report`],
+			["POST", "/campaigns", { subject: "Nope" }],
+			["PATCH", `/campaigns/${pending}`, { subject: "Changed" }],
+			["DELETE", `/campaigns/${pending}`],
+			["POST", `/campaigns/${pending}/test`],
+			["POST", `/campaigns/${pending}/send`],
+			["POST", `/campaigns/${live}/send-more`],
+			["PATCH", `/campaigns/${live}/archive`, { archiveSlug: "moved" }],
+			["GET", "/contacts"],
+			["GET", "/contacts/export"],
+			["POST", "/contacts", { email: "sneaky@example.org" }],
+			["GET", "/domains"],
+			["GET", "/api-keys"],
+			["POST", "/api-keys", { name: "Escalate", level: "full" }],
+			["GET", "/billing"],
+		]) {
+			assert.match(assertError(await api(readKey, method, path, body), 403, "forbidden"), /can only read the archive's issues/, `${method} ${path}`);
+		}
+		assert.equal(await m.Campaign.countDocuments({ accountId: user.accountId }), 3);
+		assert.equal(await m.Contact.countDocuments({ accountId: user.accountId }), 0);
+		assert.equal(await m.ApiKey.countDocuments({ accountId: user.accountId, name: "Escalate" }), 0);
+		assert.equal((await m.Campaign.findOne({ _id: pending, accountId: user.accountId }).lean()).status, "draft");
+
+		await m.Newsletter.updateOne({ _id: user.newsletterId, accountId: user.accountId }, { $set: { archiveEnabled: false } });
+		assert.deepEqual((await api(readKey, "GET", "/campaigns")).body.campaigns, [], "the archive off hides every issue");
+		assertError(await api(readKey, "GET", `/campaigns/${live}`), 404, "not_found");
+	});
+
 	test("keys from before levels can only add contacts", async () => {
 		const user = await customer("legacy-key@example.com");
 		const { key, prefix, hash } = m.tokens.generateApiKey();
