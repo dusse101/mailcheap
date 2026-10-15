@@ -38,6 +38,18 @@ Next.js App Router in JavaScript, Tailwind CSS with shadcn/ui, MongoDB through M
 
 MailCheap Cloud's marketing site, analytics and support chat aren't part of the open source. Shared code reaches them only through the site extensions, `lib/site-extensions.js` and `components/SiteExtensions.jsx`, whose defaults add nothing: never import cloud-only code anywhere else.
 
+## This fork: Taco and Tell
+
+This repository is a fork of MailCheap for the Taco and Tell newsletter, self-hosted (not MailCheap Cloud).
+
+- **Branches and remotes**: `taco-and-tell` is the working and deployed branch; `origin` is the fork, `upstream` is MailCheap's own repository. Bring upstream changes in from `upstream/main`, and never push to `upstream`.
+- **Fork changes**: kept on top of upstream, each one its own commit:
+	- Read archive API keys: a third key level that can only call `list_campaigns` and `get_campaign`, and only sees publicly archived campaigns; everything else returns 403. tacoandtell.com uses one through its `MAILCHEAP_READ_KEY` env var.
+	- `NEWSLETTER_EXTERNAL_SITES` (optional): a JSON map of newsletter slug to an external reading site's URL, for Read online links and archive redirects (`lib/external-site.js`). Unset means stock behavior.
+- **Keep changes small and upstream-friendly**: touch as few upstream files as possible, behind options that default to stock behavior, so merges stay easy.
+- **Sending**: `SENDING_ENABLED` stays false in production unless Sean explicitly says otherwise. Never send to subscribers or trigger a send as part of testing.
+- **Public repository**: no secrets, keys, subscriber emails or personal data anywhere, commit messages included.
+
 ## Rules
 
 - The code is public: never commit secrets, keys, tokens or personal data (emails, phone numbers, addresses, customers' data), in code, tests, fixtures or commit messages. Tests use `example.com` and made-up values.
