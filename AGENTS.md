@@ -40,10 +40,11 @@ MailCheap Cloud's marketing site, analytics and support chat aren't part of the 
 
 ## This fork: Taco and Tell
 
-This repository is a fork of MailCheap for the Taco and Tell newsletter, self-hosted (not MailCheap Cloud).
+This repository is a fork of MailCheap for the Taco and Tell newsletter, self-hosted (not MailCheap Cloud). Readers use tacoandtell.com, a separate project; MailCheap here is the admin and sending engine.
 
-- **Branches and remotes**: `taco-and-tell` is the working and deployed branch; `origin` is the fork, `upstream` is MailCheap's own repository. Bring upstream changes in from `upstream/main`, and never push to `upstream`.
-- **Fork changes**: kept on top of upstream, each one its own commit:
+- **Production branch**: `taco-and-tell` is Vercel's production branch, so every push to it deploys the live admin at https://app.tacoandtell.com. Work on a feature branch, which only builds previews without production env vars, and merge into `taco-and-tell` only once tests, lint and build pass.
+- **Upstream**: `origin` is the fork, `upstream` is MailCheap's own repository. Sync the fork's `main` with `upstream/main`, then merge `main` into `taco-and-tell`. Never rebase, force-push or rewrite `taco-and-tell`'s history, and never push to `upstream`.
+- **Fork changes**:
 	- Read archive API keys: a third key level that can only call `list_campaigns` and `get_campaign`, and only sees publicly archived campaigns; everything else returns 403. tacoandtell.com uses one through its `MAILCHEAP_READ_KEY` env var.
 	- `NEWSLETTER_EXTERNAL_SITES` (optional): a JSON map of newsletter slug to an external reading site's URL, for Read online links and archive redirects (`lib/external-site.js`). Unset means stock behavior.
 - **Keep changes small and upstream-friendly**: touch as few upstream files as possible, behind options that default to stock behavior, so merges stay easy.
