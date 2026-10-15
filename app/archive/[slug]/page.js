@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
 import CardIssue from "@/components/CardIssue";
 import FormSubscribe from "@/components/FormSubscribe";
@@ -6,6 +6,7 @@ import LinksSocial from "@/components/LinksSocial";
 import ScriptJsonLd from "@/components/ScriptJsonLd";
 import { countReaders, getArchiveNewsletter, listArchiveIssues } from "@/lib/archive-data";
 import { getArchiveUrls } from "@/lib/archive-hosts";
+import { getExternalSiteBase } from "@/lib/external-site";
 import { getHomeSeo } from "@/lib/archive-seo";
 import { formatNumber } from "@/lib/format";
 
@@ -23,6 +24,9 @@ export async function generateMetadata({ params }) {
 export default async function ArchivePage({ params }) {
 	const newsletter = await getArchiveNewsletter((await params).slug);
 	if (!newsletter) notFound();
+	// Read on its own website (lib/external-site.js): the archive points there.
+	const externalSite = getExternalSiteBase(newsletter);
+	if (externalSite) redirect(externalSite);
 
 	const [issues, readers] = await Promise.all([
 		listArchiveIssues(newsletter),

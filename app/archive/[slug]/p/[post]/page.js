@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
 import BadgeDate from "@/components/BadgeDate";
 import BadgeViews from "@/components/BadgeViews";
@@ -13,6 +13,7 @@ import { getArchiveAuthor } from "@/lib/archive-author";
 import { renderIssueBody } from "@/lib/archive-content";
 import { countReaders, getArchiveIssue, getArchiveNewsletter, listArchiveIssues } from "@/lib/archive-data";
 import { getArchiveUrls } from "@/lib/archive-hosts";
+import { getExternalIssueUrl } from "@/lib/external-site";
 import { getIssueDate } from "@/lib/archive-issues";
 import { getIssueSeo } from "@/lib/archive-seo";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,9 @@ export default async function IssuePage({ params }) {
 	const page = await getIssuePage(params);
 	if (!page) notFound();
 	const { newsletter, issue } = page;
+	// Read on its own website (lib/external-site.js): each issue points to its page there.
+	const externalUrl = getExternalIssueUrl(newsletter, issue.archiveSlug);
+	if (externalUrl) redirect(externalUrl);
 
 	const [more, readers] = await Promise.all([
 		listArchiveIssues(newsletter, { limit: 3, excludeId: issue._id }),
