@@ -1,0 +1,199 @@
+/* Taco & Tell's email-link pages, matching tacoandtell.com. Everything is under .tt-page, so other pages never change. */
+@font-face {
+	font-family: "TT Titan One";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("./fonts/titan-one-latin.woff2") format("woff2");
+}
+@font-face {
+	font-family: "TT Fraunces";
+	font-style: normal;
+	font-weight: 400 900;
+	font-display: swap;
+	src: url("./fonts/fraunces-latin.woff2") format("woff2");
+}
+@font-face {
+	font-family: "TT Figtree";
+	font-style: normal;
+	font-weight: 300 900;
+	font-display: swap;
+	src: url("./fonts/figtree-latin.woff2") format("woff2");
+}
+
+.tt-page {
+	--tt-navy: #003e55;
+	--tt-coral: #f2546a;
+	--tt-coral-btn: #d63a55;
+	--tt-coral-ink: #b42a43;
+	--tt-cream: #fbf3e4;
+	--tt-paper: #fffbf3;
+	--tt-tan: #f7d9a8;
+	--tt-ink-2: #3d4f57;
+	--tt-display: "TT Titan One", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+	--tt-serif: "TT Fraunces", ui-serif, Georgia, serif;
+	--tt-sans: "TT Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+	position: relative;
+	z-index: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 100dvh;
+	background-color: var(--tt-cream);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .47 0 0 0 0 .29 0 0 0 0 .16 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+	color: var(--tt-navy);
+	font: 400 17px/1.6 var(--tt-sans);
+	-webkit-font-smoothing: antialiased;
+	color-scheme: light;
+}
+.tt-page *,
+.tt-page *::before,
+.tt-page *::after {
+	box-sizing: border-box;
+}
+.tt-checker {
+	height: 18px;
+	background: repeating-conic-gradient(var(--tt-coral) 0 25%, var(--tt-cream) 0 50%) 0 0 / 18px 18px;
+	border-block: 2px solid var(--tt-navy);
+}
+.tt-main {
+	flex: 1;
+	display: grid;
+	place-items: center;
+	padding: 40px 18px 64px;
+}
+.tt-card {
+	position: relative;
+	width: 100%;
+	max-width: 34rem;
+	margin: 90px auto 0;
+	padding: 96px 24px 30px;
+	text-align: center;
+	background: var(--tt-paper);
+	border: 3px solid var(--tt-navy);
+	border-radius: 26px;
+	box-shadow: 8px 8px 0 var(--tt-navy);
+}
+.tt-card > img {
+	position: absolute;
+	left: 50%;
+	top: -92px;
+	width: 180px;
+	height: 180px;
+	margin-left: -90px;
+	animation: tt-tip 1.2s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes tt-tip {
+	from {
+		transform: translateY(16px) rotate(-8deg);
+		opacity: 0;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.tt-card > img {
+		animation: none;
+	}
+}
+.tt-card .tt-eyebrow {
+	display: inline-block;
+	margin: 0 0 12px;
+	font: 400 0.82rem/1 var(--tt-display);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--tt-coral-ink);
+}
+.tt-card h1 {
+	margin: 0 0 14px;
+	font-family: var(--tt-serif);
+	font-size: clamp(2rem, 7vw, 2.6rem);
+	font-weight: 900;
+	font-variation-settings: "SOFT" 100;
+	line-height: 1.08;
+	letter-spacing: -0.015em;
+	text-wrap: balance;
+}
+.tt-card h1:focus {
+	outline: none;
+}
+.tt-card p {
+	margin: 0 0 14px;
+	color: var(--tt-ink-2);
+	text-wrap: pretty;
+}
+.tt-card p strong {
+	color: var(--tt-navy);
+	font-weight: 700;
+}
+.tt-card .tt-fine {
+	font-size: 0.9rem;
+}
+.tt-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 12px;
+	margin: 24px 0 0;
+}
+.tt-actions form {
+	display: contents;
+}
+.tt-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 54px;
+	padding: 14px 22px;
+	font: 400 1.05rem/1 var(--tt-display);
+	letter-spacing: 0.02em;
+	text-decoration: none;
+	color: var(--tt-navy);
+	background: var(--tt-tan);
+	border: 2px solid var(--tt-navy);
+	border-radius: 12px;
+	box-shadow: 4px 4px 0 var(--tt-navy);
+	cursor: pointer;
+	transition: transform 0.08s, box-shadow 0.08s, background 0.15s;
+}
+.tt-button:hover {
+	color: var(--tt-navy);
+	background: #efc98c;
+}
+.tt-button.tt-primary {
+	color: #fff;
+	background: var(--tt-coral-btn);
+}
+.tt-button.tt-primary:hover {
+	background: #c42f4a;
+}
+.tt-button:active {
+	transform: translate(3px, 3px);
+	box-shadow: 1px 1px 0 var(--tt-navy);
+}
+.tt-button:focus-visible,
+.tt-footer a:focus-visible {
+	outline: 3px solid var(--tt-navy);
+	outline-offset: 4px;
+}
+.tt-button[disabled] {
+	opacity: 0.75;
+	cursor: progress;
+}
+@media (max-width: 480px) {
+	.tt-button {
+		width: 100%;
+	}
+}
+.tt-footer {
+	padding: 0 18px 28px;
+	text-align: center;
+	font-size: 0.85rem;
+	color: var(--tt-ink-2);
+}
+.tt-footer a {
+	color: var(--tt-coral-ink);
+	font-weight: 700;
+	text-underline-offset: 3px;
+	text-decoration-thickness: 2px;
+}
+.tt-card .tt-after {
+	margin-top: 22px;
+}

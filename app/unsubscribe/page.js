@@ -1,16 +1,21 @@
 import { CircleAlert, Link2Off, MailCheck, MailX } from "lucide-react";
+import PageBrand, { BrandActions, BrandLink } from "@/components/PageBrand";
 import { Button } from "@/components/ui/button";
 import { connectDb } from "@/lib/db";
+import { brandTitle, getPublicBrand } from "@/lib/public-brand";
 import { findNewsletterAnywhere } from "@/lib/public-newsletters";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 import Contact from "@/models/Contact";
 
 // The URL carries the unsubscribe token: keep it out of search results and referrer headers.
-export const metadata = {
-	title: "Unsubscribe",
-	robots: { index: false, follow: false },
-	referrer: "no-referrer",
-};
+export function generateMetadata() {
+	const brand = getPublicBrand();
+	return {
+		title: brand ? brandTitle(brand, "Unsubscribe") : "Unsubscribe",
+		robots: { index: false, follow: false },
+		referrer: "no-referrer",
+	};
+}
 
 const SUBSCRIBED_STATUSES = ["active", "dormant"];
 
@@ -22,6 +27,29 @@ export default async function UnsubscribePage({ searchParams }) {
 	const view = getView({ reference, status, subscription });
 	const { icon: Icon, title, description } = getCopy(view, subscription?.newsletterName);
 	const hasForm = view === "confirm" || view === "error";
+	const brand = getPublicBrand();
+
+	if (brand) {
+		const copy = getBrandCopy(view, brand);
+		return (
+			<PageBrand brand={brand} eyebrow={copy.eyebrow} title={copy.title}>
+				<p>{copy.description}</p>
+				<BrandActions>
+					{hasForm && (
+						<form method="post" action={`/api/unsubscribe?token=${validToken}`}>
+							<input type="hidden" name="source" value="page" />
+							<button type="submit" className="tt-button tt-primary">
+								Unsubscribe
+							</button>
+						</form>
+					)}
+					<BrandLink href={brand.issuesUrl} primary={!hasForm}>
+						Read past issues
+					</BrandLink>
+				</BrandActions>
+			</PageBrand>
+		);
+	}
 
 	return (
 		<main className="flex min-h-dvh items-center justify-center bg-background px-4 py-16">
@@ -95,6 +123,31 @@ function getCopy(view, newsletterName) {
 			icon: MailCheck,
 			title: "You're unsubscribed",
 			description: `You won't receive emails from ${name} anymore.`,
+		},
+	}[view];
+}
+
+function getBrandCopy(view, brand) {
+	return {
+		invalid: {
+			eyebrow: "Hmm",
+			title: "This link doesn't work",
+			description: `Open the unsubscribe link in the email again, or reply to any issue and we'll take you off the list.`,
+		},
+		confirm: {
+			eyebrow: "Unsubscribe",
+			title: `Unsubscribe from ${brand.name}?`,
+			description: "You'll stop getting the weekly email. No hard feelings.",
+		},
+		error: {
+			eyebrow: "Uh oh",
+			title: "Something went wrong",
+			description: `You're still subscribed to ${brand.name}. Give it another try in a minute.`,
+		},
+		done: {
+			eyebrow: "All set",
+			title: "You're unsubscribed",
+			description: `You won't get any more emails from ${brand.name}. Changed your mind? You can sign up again anytime at ${new URL(brand.siteUrl).hostname}.`,
 		},
 	}[view];
 }
