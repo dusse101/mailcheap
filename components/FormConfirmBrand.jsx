@@ -10,7 +10,7 @@ export default function FormConfirmBrand({ brand, token, fromEmail }) {
 
 	if (state?.ok) {
 		return (
-			<PageBrand brand={brand} eyebrow="You're on the list" title="You're in! 🌮">
+			<PageBrand brand={brand} eyebrow="You're on the list" title="You're in! 🌮" focusTitle>
 				<p>
 					Your first issue lands {brand.sendDay} from <strong>{fromEmail}</strong>. If it shows up in Promotions,
 					drag it to Primary so you don&apos;t miss a week.
@@ -25,7 +25,7 @@ export default function FormConfirmBrand({ brand, token, fromEmail }) {
 		);
 	}
 
-	if (state?.error) return <PageBrandConfirmInvalid brand={brand} />;
+	if (state?.error) return <PageBrandConfirmInvalid brand={brand} focusTitle />;
 
 	return (
 		<PageBrand brand={brand} eyebrow="One more tap" title="Confirm your subscription">

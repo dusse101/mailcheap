@@ -111,6 +111,9 @@
 	letter-spacing: -0.015em;
 	text-wrap: balance;
 }
+.tt-card h1:focus {
+	outline: none;
+}
 .tt-card p {
 	margin: 0 0 14px;
 	color: var(--tt-ink-2);
@@ -165,8 +168,9 @@
 	transform: translate(3px, 3px);
 	box-shadow: 1px 1px 0 var(--tt-navy);
 }
-.tt-button:focus-visible {
-	outline: 3px solid var(--tt-coral);
+.tt-button:focus-visible,
+.tt-footer a:focus-visible {
+	outline: 3px solid var(--tt-navy);
 	outline-offset: 4px;
 }
 .tt-button[disabled] {

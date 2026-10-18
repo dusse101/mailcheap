@@ -1,7 +1,8 @@
 import "@/assets/brands/tacoandtell/brand.css";
 
 // A branded one-card page for the email-link pages, when PUBLIC_PAGES_BRAND is set (lib/public-brand.js).
-export default function PageBrand({ brand, eyebrow, title, children }) {
+// focusTitle: for what replaces the pressed button, so keyboard and screen reader users aren't left on nothing.
+export default function PageBrand({ brand, eyebrow, title, focusTitle, children }) {
 	return (
 		<div className="tt-page" data-brand={brand.id}>
 			<div className="tt-checker" aria-hidden="true" />
@@ -10,7 +11,13 @@ export default function PageBrand({ brand, eyebrow, title, children }) {
 					{/* eslint-disable-next-line @next/next/no-img-element -- a fixed-size mascot from public/, like the reading site's */}
 					<img src={brand.mascotUrl} width="180" height="180" alt="" />
 					{eyebrow && <p className="tt-eyebrow">{eyebrow}</p>}
-					<h1>{title}</h1>
+					{focusTitle ? (
+						<h1 tabIndex={-1} ref={focusOnMount}>
+							{title}
+						</h1>
+					) : (
+						<h1>{title}</h1>
+					)}
 					{children}
 				</div>
 			</main>
@@ -19,6 +26,10 @@ export default function PageBrand({ brand, eyebrow, title, children }) {
 			</footer>
 		</div>
 	);
+}
+
+function focusOnMount(element) {
+	element?.focus();
 }
 
 export function BrandActions({ children }) {
@@ -34,9 +45,9 @@ export function BrandLink({ href, primary, children }) {
 }
 
 // The confirmation link didn't work: expired, tampered with, or its newsletter is gone.
-export function PageBrandConfirmInvalid({ brand }) {
+export function PageBrandConfirmInvalid({ brand, focusTitle }) {
 	return (
-		<PageBrand brand={brand} eyebrow="Hmm" title="This link has gone stale">
+		<PageBrand brand={brand} eyebrow="Hmm" title="This link has gone stale" focusTitle={focusTitle}>
 			<p>Confirmation links only work for 30 days. Sign up again and use the newest email we send you.</p>
 			<BrandActions>
 				<BrandLink href={brand.signupUrl} primary>

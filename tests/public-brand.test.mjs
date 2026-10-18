@@ -115,6 +115,16 @@ describe("the branded pages", () => {
 		});
 	});
 
+	test("what replaces the pressed button takes the focus, and the focus ring is easy to see", async () => {
+		const { default: PageBrand, PageBrandConfirmInvalid } = await import("../components/PageBrand.jsx");
+		const brand = getPublicBrand(BRAND);
+		assert.match(renderToStaticMarkup(createElement(PageBrand, { brand, title: "You're in", focusTitle: true })), /<h1 tabindex="-1">/);
+		assert.match(renderToStaticMarkup(createElement(PageBrandConfirmInvalid, { brand, focusTitle: true })), /<h1 tabindex="-1">/);
+		assert.match(renderToStaticMarkup(createElement(PageBrand, { brand, title: "Confirm" })), /<h1>/);
+		const css = await readFile(new URL("../assets/brands/tacoandtell/brand.css", import.meta.url), "utf8");
+		assert.match(css, /\.tt-button:focus-visible[^{]*\{\s*outline: 3px solid var\(--tt-navy\)/);
+	});
+
 	test("the unsubscribe page asks first, then says it's done, and a bad link says so", async () => {
 		const contact = await m.Contact.create({ accountId: user.accountId, newsletterId: user.newsletterId, email: "leaving@example.org", status: "active" });
 		const token = createUnsubscribeToken({ contactId: contact._id, newsletterId: user.newsletterId });
