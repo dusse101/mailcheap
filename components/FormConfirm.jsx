@@ -1,17 +1,15 @@
 "use client";
 
-import { useActionState } from "react";
-import { Link2Off, Loader2, MailCheck } from "lucide-react";
-import { confirmSubscription } from "@/app/confirm/actions";
+import { MailCheck } from "lucide-react";
 import CardNotice from "@/components/CardNotice";
 import { Button } from "@/components/ui/button";
 
-// Only the button's POST confirms: link scanners, some of which run scripts, open the page without pressing it.
-export default function FormConfirm({ token, newsletterName, fromName, fromEmail, archiveUrl }) {
-	const [state, action, isPending] = useActionState(confirmSubscription.bind(null, token), null);
-	if (state?.ok) {
+// Only the button's POST confirms. It posts to /api/confirm, not a server action: without JavaScript,
+// Next.js accepts the action and then never sends the page back.
+export default function FormConfirm({ token, newsletterName, fromName, fromEmail, archiveUrl, outcome = "form" }) {
+	if (outcome === "done") {
 		return (
-			<CardNotice icon={MailCheck} tone="success" title="You're in">
+			<CardNotice icon={MailCheck} tone="success" title="You're in" focusTitle>
 				The next issue of {newsletterName} comes from{" "}
 				<span className="font-medium text-foreground">{fromName || fromEmail}</span>
 				{fromName && ` (${fromEmail})`}. If it lands in Promotions, drag it to Primary.
@@ -24,24 +22,13 @@ export default function FormConfirm({ token, newsletterName, fromName, fromEmail
 		);
 	}
 
-	if (state?.error) {
-		return (
-			<CardNotice icon={Link2Off} title="This link doesn't work">
-				It may be older than 30 days. Sign up again and use the newest confirmation email.
-			</CardNotice>
-		);
-	}
-
 	return (
-		<CardNotice
-			icon={isPending ? Loader2 : MailCheck}
-			spin={isPending}
-			title={`Confirm your subscription to ${newsletterName}`}
-		>
+		<CardNotice icon={MailCheck} title={`Confirm your subscription to ${newsletterName}`}>
 			One click and the next issue lands in your inbox.
-			<form action={action} className="mt-6">
-				<Button type="submit" size="lg" disabled={isPending} className="w-full">
-					{isPending ? "Confirming…" : "Confirm my subscription"}
+			<form method="post" action="/api/confirm" className="mt-6">
+				<input type="hidden" name="token" value={token} />
+				<Button type="submit" size="lg" className="w-full">
+					Confirm my subscription
 				</Button>
 			</form>
 		</CardNotice>

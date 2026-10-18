@@ -1,14 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
-import { confirmSubscription } from "@/app/confirm/actions";
-import PageBrand, { BrandActions, BrandLink, PageBrandConfirmInvalid } from "@/components/PageBrand";
+import PageBrand, { BrandActions, BrandLink } from "@/components/PageBrand";
 
-// The branded confirm page. Only the button's POST confirms: opening the link (or a link scanner opening it) never does.
-export default function FormConfirmBrand({ brand, token, fromEmail }) {
-	const [state, action, isPending] = useActionState(confirmSubscription.bind(null, token), null);
-
-	if (state?.ok) {
+// The branded confirm page. Only the button's POST confirms, and it posts to /api/confirm: a server
+// action's response never finishes when the browser submits the form on its own.
+export default function FormConfirmBrand({ brand, token, fromEmail, outcome = "form" }) {
+	if (outcome === "done") {
 		return (
 			<PageBrand brand={brand} eyebrow="You're on the list" title="You're in! 🌮" focusTitle>
 				<p>
@@ -25,8 +22,6 @@ export default function FormConfirmBrand({ brand, token, fromEmail }) {
 		);
 	}
 
-	if (state?.error) return <PageBrandConfirmInvalid brand={brand} focusTitle />;
-
 	return (
 		<PageBrand brand={brand} eyebrow="One more tap" title="Confirm your subscription">
 			<p>
@@ -34,9 +29,10 @@ export default function FormConfirmBrand({ brand, token, fromEmail }) {
 				what&apos;s opening, closing and changing around you.
 			</p>
 			<BrandActions>
-				<form action={action}>
-					<button type="submit" className="tt-button tt-primary" disabled={isPending}>
-						{isPending ? "Subscribing…" : "Yes, subscribe me"}
+				<form method="post" action="/api/confirm">
+					<input type="hidden" name="token" value={token} />
+					<button type="submit" className="tt-button tt-primary">
+						Yes, subscribe me
 					</button>
 				</form>
 			</BrandActions>

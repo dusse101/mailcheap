@@ -111,7 +111,7 @@ describe("a new slug", () => {
 		assert.equal((await m.archive.getArchiveNewsletter("old-notes"))?.slug, "old-notes");
 		assert.equal((await saveSlug(user, "new-notes")).ok, true);
 
-		for (const path of ["/c/token", "/o/token", "/unsubscribe?token=token", "/confirm?token=token", "/keep?token=token"]) {
+		for (const path of ["/c/token", "/o/token", "/unsubscribe?token=token", "/api/unsubscribe?token=token", "/confirm?token=token", "/api/confirm?token=token", "/keep?token=token"]) {
 			assert.deepEqual(outcome(await visit(`https://old-notes.mailcheap.ai${path}`)), { next: true }, path);
 		}
 		assert.deepEqual(outcome(await visit("https://old-notes.mailcheap.ai/p/first-issue")), { rewrite: "/archive/old-notes/p/first-issue" });
