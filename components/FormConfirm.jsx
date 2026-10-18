@@ -1,20 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState } from "react";
 import { Link2Off, Loader2, MailCheck } from "lucide-react";
 import { confirmSubscription } from "@/app/confirm/actions";
 import CardNotice from "@/components/CardNotice";
 import { Button } from "@/components/ui/button";
 
-// Link scanners open the page without submitting forms, so only a person's browser confirms.
+// Only the button's POST confirms: link scanners, some of which run scripts, open the page without pressing it.
 export default function FormConfirm({ token, newsletterName, fromName, fromEmail, archiveUrl }) {
 	const [state, action, isPending] = useActionState(confirmSubscription.bind(null, token), null);
-	const formRef = useRef(null);
-
-	useEffect(() => {
-		formRef.current?.requestSubmit();
-	}, []);
-
 	if (state?.ok) {
 		return (
 			<CardNotice icon={MailCheck} tone="success" title="You're in">
@@ -45,7 +39,7 @@ export default function FormConfirm({ token, newsletterName, fromName, fromEmail
 			title={`Confirm your subscription to ${newsletterName}`}
 		>
 			One click and the next issue lands in your inbox.
-			<form ref={formRef} action={action} className="mt-6">
+			<form action={action} className="mt-6">
 				<Button type="submit" size="lg" disabled={isPending} className="w-full">
 					{isPending ? "Confirming…" : "Confirm my subscription"}
 				</Button>
