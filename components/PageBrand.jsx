@@ -59,7 +59,7 @@ export function PageBrandConfirmInvalid({ brand, focusTitle }) {
 	);
 }
 
-// A real link, but this address isn't waiting to confirm: they left, bounced, complained, went dormant, or they're gone.
+// A real link, but this address isn't waiting to confirm: they left, bounced, complained, or they're gone.
 export function PageBrandConfirmClosed({ brand }) {
 	return (
 		<PageBrand brand={brand} eyebrow="Hmm" title="This link can't subscribe you">

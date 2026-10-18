@@ -171,8 +171,47 @@ describe("confirming a subscription", () => {
 		);
 	});
 
-	test("someone who left, bounced, complained or went dormant is not offered a way back on", async () => {
-		for (const status of ["unsubscribed", "bounced", "complained", "dormant"]) {
+	test("someone who went dormant sees they're in, and pressing the button leaves them dormant", async () => {
+		const confirmedAt = new Date("2026-01-05T00:00:00Z");
+		const lastChanceAt = new Date("2026-08-01T00:00:00Z");
+		const contact = await m.Contact.create({
+			accountId: user.accountId,
+			newsletterId: user.newsletterId,
+			email: "gone-quiet@example.org",
+			status: "dormant",
+			confirmedAt,
+			lastChanceAt,
+			ignoredIssues: 7,
+		});
+		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
+		for (const [label, env] of [["stock", { PUBLIC_PAGES_BRAND: "" }], ["branded", BRAND]]) {
+			const html = await withEnv(env, () => renderPage(m.confirmPage, { token }));
+			assert.match(html, /You(?:'|&#x27;)re in/, label);
+			assert.doesNotMatch(html, /<form/, label);
+			assert.doesNotMatch(html, /isn&#x27;t waiting to confirm/, label);
+		}
+
+		const posted = await m.confirmRoute.POST(
+			new Request("http://localhost:3000/api/confirm", {
+				method: "POST",
+				headers: { origin: "http://localhost:3000" },
+				body: new URLSearchParams({ token }),
+			})
+		);
+		assert.equal(posted.status, 303);
+		assert.equal(new URL(posted.headers.get("location")).searchParams.get("token"), token);
+		await flushAfter();
+		const after = await m.Contact.findOne({ accountId: user.accountId, _id: contact._id })
+			.select({ status: 1, confirmedAt: 1, lastChanceAt: 1, ignoredIssues: 1 })
+			.lean();
+		assert.equal(after.status, "dormant", "the keep link or signing up again brings them back, not this");
+		assert.deepEqual(after.confirmedAt, confirmedAt);
+		assert.deepEqual(after.lastChanceAt, lastChanceAt);
+		assert.equal(after.ignoredIssues, 7);
+	});
+
+	test("someone who left, bounced or complained is not offered a way back on", async () => {
+		for (const status of ["unsubscribed", "bounced", "complained"]) {
 			const contact = await m.Contact.create({
 				accountId: user.accountId,
 				newsletterId: user.newsletterId,

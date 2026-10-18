@@ -63,13 +63,16 @@ export default async function ConfirmPage({ searchParams }) {
 	);
 }
 
-// Opening the link never confirms. pending: the button. active: they already confirmed, including after a refresh.
-// Anything else (left, bounced, complained, dormant, gone): no button, so it can't look like a way back on.
+// Opening the link never confirms. pending: the button. active or dormant: they already confirmed, including after a
+// refresh; dormant is still on the list, and only the keep link or signing up again brings it back to active.
+// Anything else (left, bounced, complained, gone): no button, so it can't look like a way back on.
+const CONFIRMED_STATUSES = ["active", "dormant"];
+
 function confirmOutcome(newsletter, lookup) {
 	if (!newsletter) return "invalid";
 	if (lookup?.failed) return "form";
 	if (lookup?.contact?.status === "pending") return "form";
-	if (lookup?.contact?.status === "active") return "done";
+	if (CONFIRMED_STATUSES.includes(lookup?.contact?.status)) return "done";
 	return "closed";
 }
 
