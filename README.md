@@ -100,8 +100,9 @@ Without Redis, MailCheap counts the same rate limits in each server instance's m
 | `ADMIN_EMAILS` | Comma-separated emails that can sign in and open `/admin` |
 | `ALLOWED_EMAILS` | Who else can sign in: addresses and `@domain` entries, comma-separated |
 | `EMAIL_FROM` | From address of sign-in codes and alerts, on a domain your Resend account or email provider verified |
-| `APP_URL` | Public URL of the app, for email links and sign-in. On Vercel it defaults to the production domain |
+| `APP_URL` | Public URL of the app, for email links and sign-in. On Vercel production it defaults to the production domain. On a preview deployment with this unset, it defaults to that deployment's host |
 | `RESEND_API_KEY` | Optional: sign-in codes and alerts through Resend. Without it, they go through the email provider |
+| `PREVIEW_SIGNIN_CODE_LOG` | Exactly `true` on a Vercel preview with no email provider: print an allowlisted address's sign-in code in the server log. The server refuses to start with it in production |
 | `SENDING_ENABLED` | Nothing goes to readers unless it's `true`. Sign-in codes and alerts don't wait for it |
 | `SES_*` or `POSTSHIBA_*` | The email provider, in step 4 |
 | `QSTASH_*` | Background sending and scheduling, in step 5 |
@@ -120,7 +121,7 @@ Without Redis, MailCheap counts the same rate limits in each server instance's m
 1. Click **Deploy** above.
 2. Fill in `MONGODB_URI`, `BETTER_AUTH_SECRET` (at least 32 characters; generate it with `openssl rand -base64 48`), `SUPPRESSION_HASH_KEY` (generated the same way, another value), `ADMIN_EMAILS` (your email) and `EMAIL_FROM` (like `MailCheap <login@mail.example.com>`, on a domain your Resend account or email provider verified). With a short secret, MailCheap refuses to start and the logs say why.
 3. Sign-in codes need a way to reach you. The quickest is [Resend](https://resend.com): verify `EMAIL_FROM`'s domain there and add `RESEND_API_KEY`. Without it, codes go through SES or PostShiba once step 4 is done.
-4. Open `https://<your-project>.vercel.app/signin` and sign in with your email.
+4. Open `https://<your-project>.vercel.app/signin` and sign in with your email. On a Vercel preview that has no email provider, set `PREVIEW_SIGNIN_CODE_LOG=true` and leave `APP_URL` unset: the code is printed in the server log for an allowlisted address, and sign-in stays on the preview host. Production refuses to start with that flag.
 
 Sending stays off until you finish the next steps, so nothing goes out to readers by mistake. On any other Node.js host: `npm ci && npm run build && npm start`, with the same variables, behind HTTPS. `/api/health` answers 200, or 503 with what to fix.
 
@@ -322,7 +323,7 @@ cp .env.example .env.local   # set MONGODB_URI, BETTER_AUTH_SECRET, SUPPRESSION_
 npm run dev
 ```
 
-- Without `MAILCHEAP_CLOUD` it runs as a self-hosted server: sign in with an email in `ADMIN_EMAILS` or `ALLOWED_EMAILS`. Without `RESEND_API_KEY`, development prints the code in the server console (`[signin] Code for ...`); production never does.
+- Without `MAILCHEAP_CLOUD` it runs as a self-hosted server: sign in with an email in `ADMIN_EMAILS` or `ALLOWED_EMAILS`. Without `RESEND_API_KEY`, development prints the code in the server console (`[signin] Code for ...`); production never does. A Vercel preview does the same only when `PREVIEW_SIGNIN_CODE_LOG=true`, no email provider is configured, and the address is on the allowlist.
 - A local MongoDB works: `docker run -d -p 27017:27017 mongo` and `MONGODB_URI=mongodb://127.0.0.1:27017/mailcheap`. A replica set (`mongod --replSet rs0`, then `rs.initiate()`) also gives Better Auth transactions, like Atlas.
 - To work on MailCheap Cloud's own parts, set `MAILCHEAP_CLOUD=true` with Stripe test keys and a Resend key: the cloud doesn't start without them. Run `stripe listen --forward-to localhost:3000/api/webhooks/stripe` and use its signing secret as `STRIPE_WEBHOOK_SECRET`.
 - Sending stays off unless `SENDING_ENABLED=true`. SES needs `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`: the app never falls back to `~/.aws` or other default AWS credentials. PostShiba needs its four ids and keys and `CREDENTIALS_ENCRYPTION_KEY`.
