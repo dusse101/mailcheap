@@ -47,8 +47,9 @@ This repository is a fork of MailCheap for the Taco and Tell newsletter, self-ho
 - **Fork changes**:
 	- Read archive API keys: a third key level that can only call `list_campaigns` and `get_campaign`, and only sees publicly archived campaigns; everything else returns 403. tacoandtell.com uses one through its `MAILCHEAP_READ_KEY` env var.
 	- `NEWSLETTER_EXTERNAL_SITES` (optional): a JSON map of newsletter slug to an external reading site's URL, for Read online links and archive redirects (`lib/external-site.js`). Unset means stock behavior.
-	- `PUBLIC_PAGES_BRAND` (optional): `tacoandtell` brands the confirm and unsubscribe pages like tacoandtell.com (`lib/public-brand.js`, `components/PageBrand.jsx`, `components/FormConfirmBrand.jsx`, fonts and CSS in `assets/brands/tacoandtell/`). Unset means the stock pages.
+	- `PUBLIC_PAGES_BRAND` (optional): `tacoandtell` brands the confirm, keep and unsubscribe pages like tacoandtell.com (`lib/public-brand.js`, `components/PageBrand.jsx`, `components/FormConfirmBrand.jsx`, `components/FormKeepBrand.jsx`, fonts and CSS in `assets/brands/tacoandtell/`). Unset means the stock pages.
 	- The confirm link never confirms by itself: the page shows a button and only a POST to `/api/confirm` confirms, so link scanners can't subscribe anyone (upstream's form submitted itself on load). A server action here never finishes answering a browser that submits the form on its own.
+	- The keep link never keeps by itself: the page shows a button and only a POST to `/api/keep` answers the last-chance email, so link scanners can't keep anyone. It follows the confirm page (`Referrer-Policy: strict-origin`, and the route refuses a null or mismatched Origin).
 - **Keep changes small and upstream-friendly**: touch as few upstream files as possible, behind options that default to stock behavior, so merges stay easy.
 - **Sending**: `SENDING_ENABLED` stays false in production unless Sean explicitly says otherwise. Never send to subscribers or trigger a send as part of testing.
 - **Public repository**: no secrets, keys, subscriber emails or personal data anywhere, commit messages included.

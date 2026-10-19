@@ -1,23 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
-import { HeartHandshake, Link2Off, Loader2, MailCheck } from "lucide-react";
-import { keepSending } from "@/app/keep/actions";
+import { HeartHandshake, Link2Off, MailCheck } from "lucide-react";
 import CardNotice from "@/components/CardNotice";
 import { Button } from "@/components/ui/button";
 
-// Link scanners open the page without submitting forms, so only a person's browser says yes.
-export default function FormKeep({ token, newsletterName, archiveUrl }) {
-	const [state, action, isPending] = useActionState(keepSending.bind(null, token), null);
-	const formRef = useRef(null);
-
-	useEffect(() => {
-		formRef.current?.requestSubmit();
-	}, []);
-
-	if (state?.ok) {
+// Only the button's POST keeps. It posts to /api/keep, not a server action: without JavaScript,
+// Next.js accepts the action and then never sends the page back.
+export default function FormKeep({ token, newsletterName, archiveUrl, outcome = "form" }) {
+	if (outcome === "done") {
 		return (
-			<CardNotice icon={MailCheck} tone="success" title={`You'll keep getting ${newsletterName}`}>
+			<CardNotice icon={MailCheck} tone="success" title={`You'll keep getting ${newsletterName}`} focusTitle>
 				Thanks for letting me know. The next issue lands in your inbox.
 				{archiveUrl && (
 					<Button asChild size="lg" variant="outline" className="mt-6 w-full">
@@ -28,7 +20,7 @@ export default function FormKeep({ token, newsletterName, archiveUrl }) {
 		);
 	}
 
-	if (state?.error === "invalid") {
+	if (outcome === "closed") {
 		return (
 			<CardNotice icon={Link2Off} title="This link doesn't work">
 				It may be older than 90 days, or you unsubscribed. Sign up again to get {newsletterName}.
@@ -42,17 +34,12 @@ export default function FormKeep({ token, newsletterName, archiveUrl }) {
 	}
 
 	return (
-		<CardNotice
-			icon={isPending ? Loader2 : HeartHandshake}
-			spin={isPending}
-			title={`Keep getting ${newsletterName}?`}
-		>
-			{state?.error === "busy"
-				? "Too many clicks from your network. Try again in a few minutes."
-				: "One click and it keeps coming."}
-			<form ref={formRef} action={action} className="mt-6">
-				<Button type="submit" size="lg" disabled={isPending} className="w-full">
-					{isPending ? "Saving…" : "Yes, keep sending it"}
+		<CardNotice icon={HeartHandshake} title={`Keep getting ${newsletterName}?`}>
+			One click and it keeps coming.
+			<form method="post" action="/api/keep" className="mt-6">
+				<input type="hidden" name="token" value={token} />
+				<Button type="submit" size="lg" className="w-full">
+					Yes, keep sending it
 				</Button>
 			</form>
 		</CardNotice>

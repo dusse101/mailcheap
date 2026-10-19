@@ -59,6 +59,36 @@ export function PageBrandConfirmInvalid({ brand, focusTitle }) {
 	);
 }
 
+// The keep link didn't work: expired, tampered with, or its newsletter is gone.
+export function PageBrandKeepInvalid({ brand }) {
+	return (
+		<PageBrand brand={brand} eyebrow="Hmm" title="This link has gone stale">
+			<p>These links only work for 90 days. Sign up again and you&apos;ll get the next issue.</p>
+			<BrandActions>
+				<BrandLink href={brand.signupUrl} primary>
+					Sign up again
+				</BrandLink>
+				<BrandLink href={brand.issuesUrl}>Read past issues</BrandLink>
+			</BrandActions>
+		</PageBrand>
+	);
+}
+
+// A real link, but this address can't be kept: they left, bounced, complained, or a dormant address is suppressed.
+export function PageBrandKeepClosed({ brand }) {
+	return (
+		<PageBrand brand={brand} eyebrow="Hmm" title="This link can't keep you on the list">
+			<p>This address isn&apos;t getting the newsletter. If you left the list, you can sign up again.</p>
+			<BrandActions>
+				<BrandLink href={brand.signupUrl} primary>
+					Sign up again
+				</BrandLink>
+				<BrandLink href={brand.issuesUrl}>Read past issues</BrandLink>
+			</BrandActions>
+		</PageBrand>
+	);
+}
+
 // A real link, but this address isn't waiting to confirm: they left, bounced, complained, or they're gone.
 export function PageBrandConfirmClosed({ brand }) {
 	return (
