@@ -80,7 +80,7 @@ test("EMAIL_BRAND=tacoandtell wraps Markdown in the branded shell", () => {
 		assert.ok(html.includes("Prosper · Celina · Frisco · Little Elm · McKinney"));
 		assert.equal(html.includes("Breakfast-sized"), false);
 		assert.equal(html.includes("★"), false);
-		assert.match(html, /bgcolor="#d63a55"[^>]*>\s*<a href="\{\{confirm_url\}\}"/);
+		assert.match(html, /bgcolor="#d63a55"[^>]*mso-padding-alt:13px 28px[^>]*>\s*<a href="\{\{confirm_url\}\}"[^>]*padding:13px 28px/);
 		assert.ok(html.includes("1 Main St, Paris"));
 		assert.ok(html.includes(UNSUBSCRIBE_PLACEHOLDER));
 		assert.ok(html.includes("data-preheader"));
@@ -137,6 +137,19 @@ test("confirmation and campaign footers say what the kind is, with an unsubscrib
 		const welcome = renderEmail({ ...base, kind: "welcome" });
 		assert.match(welcome.text, /signed up/);
 		assert.ok(welcome.html.includes("Past issues"));
+
+		const lastChance = renderEmail({ ...base, kind: "last-chance" });
+		assert.match(lastChance.html, /This is the last email unless you tap keep/);
+		assert.match(lastChance.text, /This is the last email unless you tap keep/);
+		assert.equal(/every Thursday morning/.test(lastChance.html), false);
+		assert.equal(/every Thursday morning/.test(lastChance.text), false);
+		assert.equal(/One email, every/.test(lastChance.html), false);
+		assert.equal(/One email, every/.test(lastChance.text), false);
+		assert.ok(lastChance.html.includes(">Unsubscribe</a>"));
+		assert.ok(lastChance.html.includes("Past issues"));
+		assert.ok(lastChance.html.includes("1 Main St, Paris"));
+		assert.ok(lastChance.text.includes(`Unsubscribe: ${UNSUBSCRIBE_PLACEHOLDER}`));
+		assert.ok(lastChance.text.includes("1 Main St, Paris"));
 	});
 });
 
@@ -185,7 +198,7 @@ test("getConfirmationProblem still accepts the custom confirmation copy when the
 		assert.equal(getConfirmationProblem(CUSTOM_CONFIRMATION), null);
 		assert.equal(getConfirmationProblem(getConfirmationContent({ name: "Field notes" })), null);
 		const { html } = renderEmail({ ...CUSTOM_CONFIRMATION, kind: "confirmation", newsletter, fontBaseUrl: APP });
-		assert.match(html, /bgcolor="#d63a55"[^>]*>\s*<a href="\{\{confirm_url\}\}"/);
+		assert.match(html, /bgcolor="#d63a55"[^>]*mso-padding-alt:13px 28px[^>]*>\s*<a href="\{\{confirm_url\}\}"[^>]*padding:13px 28px/);
 	});
 });
 
