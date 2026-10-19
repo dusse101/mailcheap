@@ -95,6 +95,20 @@ Nothing in this range. `package.json` matches on both sides: Next `16.4.1`, Reac
 
 `mongod` 8.0.15 was used via `MONGOD_PATH` for the test run. Nothing was sent, and no Vercel env or production branch was changed.
 
+## After PR #3
+
+`taco-and-tell` moved to `de1a7f1` (merge of PR #3, the keep-page fix) after this branch was opened. That commit was merged in, not rebased.
+
+Git conflicted only on `app/keep/page.js`. The resolution is PR #3's page in full: GET does not change state, nothing auto-submits, the button POSTs to `/api/keep`, `Referrer-Policy` is `strict-origin`, `PUBLIC_PAGES_BRAND` picks the branded page, and a refresh reads the contact again. The stock page also renders `StyleTheme` with the newsletter's theme, the same addition upstream made on confirm and unsubscribe. The branded keep page is unchanged. `CardNotice` already uses the theme heading, so the stock keep card picks up the theme font.
+
+`app/api/keep/route.js`, `tests/keep.test.mjs`, and the `/api/keep` entries on `PUBLIC_PATHS` and `ARCHIVE_HOST_PATHS` came through next to upstream's `/help` route and `woff2` font matcher. `proxy.js` merged on its own.
+
+Checks on this merge, Node v22.14.0:
+
+- `npm run lint`: clean
+- `npm test`: 879 passed, 0 failed (139 suites). That is the 865 from the upstream sync plus the 14 keep tests from PR #3.
+- `npm run build`: compiled, 74 static pages, including `/api/keep`, Next.js 16.4.1
+
 ## Keeping up
 
 Check `upstream/main` once a week, and again whenever `package.json` or `SECURITY.md` changes. One command from a checkout that already has the remote:
