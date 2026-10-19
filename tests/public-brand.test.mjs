@@ -10,7 +10,8 @@ import { activate, anonymous, as, catchRedirect, form, signIn, startTestApp, wit
 import { flushAfter } from "./stubs/next-server.mjs";
 
 // The confirm link only shows a button: opening it never confirms, so link scanners can't subscribe anyone. With
-// PUBLIC_PAGES_BRAND set, the confirm and unsubscribe pages wear the brand; without it they're the stock pages.
+// PUBLIC_PAGES_BRAND set, the confirm, keep and unsubscribe pages wear the brand; without it they're the stock pages.
+// The keep page's own behavior is tests/keep.test.mjs.
 let app;
 let m;
 let user;
@@ -22,6 +23,7 @@ before(async () => {
 		confirm: await import("../app/confirm/actions.js"),
 		confirmRoute: await import("../app/api/confirm/route.js"),
 		confirmPage: await import("../app/confirm/page.js"),
+		keepPage: await import("../app/keep/page.js"),
 		unsubscribePage: await import("../app/unsubscribe/page.js"),
 		Contact: (await import("../models/Contact.js")).default,
 	};
@@ -258,6 +260,11 @@ describe("the branded pages", () => {
 		assert.deepEqual(await withEnv(BRAND, () => m.unsubscribePage.generateMetadata().title), { absolute: "Unsubscribe · Taco & Tell" });
 		assert.deepEqual(await withEnv(BRAND, () => m.confirmPage.generateMetadata().title), {
 			absolute: "Confirm your subscription · Taco & Tell",
+		});
+		assert.equal(await withEnv({ PUBLIC_PAGES_BRAND: "" }, () => m.keepPage.generateMetadata().title), "Keep getting the newsletter");
+		assert.equal(m.keepPage.generateMetadata().referrer, "strict-origin");
+		assert.deepEqual(await withEnv(BRAND, () => m.keepPage.generateMetadata().title), {
+			absolute: "Keep getting the newsletter · Taco & Tell",
 		});
 	});
 
