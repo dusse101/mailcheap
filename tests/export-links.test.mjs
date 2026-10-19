@@ -15,8 +15,16 @@ test("an export link carries the account and filters, signed, for an hour", () =
 	const now = Date.parse("2026-10-12T10:00:00Z");
 	const { token, expiresAt } = createExportToken({ accountId: ACCOUNT, newsletterId: NEWSLETTER, status: "active", query: "jane" }, now);
 	assert.equal(expiresAt.getTime(), now + EXPORT_LINK_MS);
-	assert.deepEqual(verifyExportToken(token, now + 59 * 60_000), { accountId: ACCOUNT, newsletterId: NEWSLETTER, status: "active", query: "jane" });
+	assert.deepEqual(verifyExportToken(token, now + 59 * 60_000), {
+		accountId: ACCOUNT,
+		newsletterId: NEWSLETTER,
+		status: "active",
+		query: "jane",
+		segmentId: null,
+	});
 	assert.equal(verifyExportToken(token, now + 61 * 60_000), null, "expired");
+	const segment = createExportToken({ accountId: ACCOUNT, segmentId: "6650f1c2e9b1d4a0123456ee" }, now);
+	assert.equal(verifyExportToken(segment.token, now).segmentId, "6650f1c2e9b1d4a0123456ee", "a segment's export keeps it");
 
 	const [payload, signature] = token.split(".");
 	const widened = Buffer.from(JSON.stringify({ a: "6650f1c2e9b1d4a0123456aa", e: Math.floor(now / 1000) + 3600 })).toString("base64url");

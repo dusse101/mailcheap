@@ -199,7 +199,7 @@ describe("without a plan", () => {
 		assert.equal(signedOut.status, 401);
 	});
 
-	test("the dashboard adds 5 contacts a day by hand, active at once with the signup checks and no email; imports stay paid", async () => {
+	test("the dashboard adds 3 contacts a day by hand, active at once with the signup checks and no email; imports stay paid", async () => {
 		const user = await signIn("contacts-trial@example.com");
 		await welcome(user, { name: "Contacts trial" });
 		const newsletterId = String((await m.Newsletter.findOne({ accountId: user.accountId }).lean())._id);
@@ -209,20 +209,20 @@ describe("without a plan", () => {
 		assert.deepEqual(await add("me@example.org"), { email: "me@example.org", status: "active" }, "though new newsletters ask signups to confirm");
 		assert.deepEqual(await add("jane.doe@gmial.com"), { error: "Did you mean jane.doe@gmail.com?" }, "a refused address doesn't count");
 		assert.deepEqual(await add("me@example.org"), { error: "me@example.org is already a contact" });
-		for (const email of ["a@example.org", "b@example.org", "c@example.org"]) assert.equal((await add(email)).status, "active", email);
-		assert.deepEqual(await add("d@example.org"), { error: "Pick a plan to add more contacts", code: "subscription_required" });
+		assert.equal((await add("a@example.org")).status, "active");
+		assert.deepEqual(await add("b@example.org"), { error: "Pick a plan to add more contacts", code: "subscription_required" });
 		await flushAfter();
 		assert.equal(await m.Message.countDocuments({ accountId: user.accountId }), 0, "sending stays paid: no email");
 		const contacts = await m.Contact.find({ accountId: user.accountId }).sort({ email: 1 }).lean();
 		assert.deepEqual(
 			contacts.map(({ email, source }) => [email, source]),
-			["a", "b", "c", "me"].map((name) => [`${name}@example.org`, "dashboard"])
+			["a", "me"].map((name) => [`${name}@example.org`, "dashboard"])
 		);
 		const rows = [{ email: "e@example.org" }];
 		assert.equal((await as(user, () => m.contacts.importContacts({ newsletterId, rows, consent: true }))).code, "subscription_required");
 
 		await activate(user);
-		assert.equal((await add("d@example.org")).status, "active", "a plan lifts the cap");
+		assert.equal((await add("b@example.org")).status, "active", "a plan lifts the cap");
 		await flushAfter();
 		assert.equal(await m.Message.countDocuments({ accountId: user.accountId }), 0, "with a plan, still no confirmation email");
 	});

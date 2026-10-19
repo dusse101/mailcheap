@@ -220,6 +220,12 @@ export async function proveVolume(user, sent, { bounced = 0, hoursAgo = 48 } = {
 	});
 }
 
+// An issue the newsletter sent, which puts its website online (lib/archive-data.js).
+export async function addSentIssue(user) {
+	const Campaign = (await import("../../models/Campaign.js")).default;
+	await Campaign.create({ accountId: user.accountId, newsletterId: user.newsletterId, subject: "Sent issue", status: "sent", sentAt: new Date() });
+}
+
 // A domain added through the Domains page, with its DNS records in and its archive subdomain pointed at us.
 export async function addVerifiedDomain(user, domain, { archiveHost = `news.${domain}`, isArchiveLive = true } = {}) {
 	const { addDomain, checkDomain } = await import("../../lib/domains.js");

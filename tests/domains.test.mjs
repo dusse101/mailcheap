@@ -130,7 +130,7 @@ describe("SES tenants", () => {
 
 	test("a failed setup doesn't stop the plan, and the first send finishes it", async () => {
 		const user = await signIn("tenant-retry@example.com");
-		state.failNext = { name: "createTenant", error: new Error("Throttled") };
+		state.failNext = { name: "createTenant", error: new Error("Throttled"), times: 2 };
 		await m.billing.applySubscription(await m.Account.findById(user.accountId).lean(), {
 			id: "sub_retry",
 			status: "active",

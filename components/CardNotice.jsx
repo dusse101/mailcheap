@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 // The one-card pages subscribers land on from an email link (confirm, keep sending).
 // focusTitle: for what replaces the pressed button, so keyboard and screen reader users aren't left on nothing.
 export default function CardNotice({ icon: Icon, tone, spin, title, focusTitle, children }) {
-	const titleClass = "mt-4 text-lg font-semibold tracking-tight text-balance";
+	const titleClass = "mt-4 text-lg font-theme-heading text-balance";
 	return (
 		<div className="w-full max-w-sm rounded-xl bg-card p-6 text-center shadow-border animate-enter sm:p-8">
 			<div

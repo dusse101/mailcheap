@@ -4,6 +4,7 @@ import { contactSearchFilter } from "@/lib/contacts";
 import { getCsvHeader, toCsvRow } from "@/lib/contacts-csv";
 import { connectDb } from "@/lib/db";
 import { verifyExportToken } from "@/lib/export-token";
+import { findSegmentListFilter } from "@/lib/segment-queries";
 import Account from "@/models/Account";
 import Contact from "@/models/Contact";
 import Newsletter from "@/models/Newsletter";
@@ -25,7 +26,10 @@ export async function GET(request) {
 	const newsletters = new Map(
 		(await Newsletter.find(scoped(account)).select({ slug: 1 }).lean()).map(({ _id, slug }) => [String(_id), slug])
 	);
+	const segmentFilter = link.segmentId ? await findSegmentListFilter(account, link.segmentId) : null;
+	if (link.segmentId && !segmentFilter) return fail(404, "not_found", "The segment was deleted: export again");
 	const filter = {
+		...segmentFilter,
 		...contactSearchFilter(account, { newsletterId: link.newsletterId, query: link.query }),
 		...(link.status && { status: link.status }),
 	};

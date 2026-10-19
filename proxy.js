@@ -9,8 +9,8 @@ import { siteExtensions } from "@/lib/site-extensions";
 const NOT_FOUND_PATH = "/_not-on-this-server";
 
 // Reachable without a session: recipients, mail providers, AWS, Stripe, QStash, Vercel Cron, API-key
-// and OAuth clients (REST and MCP, OAuth discovery), the docs and uptime checks. The consent page checks
-// the session itself, so a signed-out visitor goes to sign-in with the app's request.
+// and OAuth clients (REST and MCP, OAuth discovery), the docs, the help center and uptime checks. The consent
+// page checks the session itself, so a signed-out visitor goes to sign-in with the app's request.
 const PUBLIC_PATHS = [
 	/^\/api\/health$/,
 	/^\/favicon\.ico$/,
@@ -20,6 +20,7 @@ const PUBLIC_PATHS = [
 	/^\/oauth\/consent$/,
 	/^\/\.well-known\/(oauth-protected-resource(\/mcp)?|oauth-authorization-server|openid-configuration)$/,
 	/^\/docs(\/.*)?$/,
+	/^\/help(\/.*)?$/,
 	/^\/llms(-full)?\.txt$/,
 	/^\/mcp$/,
 	/^\/api\/mcp$/,
@@ -113,7 +114,8 @@ export async function proxy(request) {
 	return NextResponse.redirect(signin);
 }
 
-// favicon.ico goes through the proxy so archive domains answer 404 and browsers keep the newsletter's logo.
+// favicon.ico goes through the proxy so archive domains answer 404 and browsers keep the newsletter's logo. Theme fonts
+// (public/fonts) load on every host, archives included.
 export const config = {
-	matcher: ["/((?!_next/static|_next/image|.*\\.(?:png|svg|jpg|webp)$).*)"],
+	matcher: ["/((?!_next/static|_next/image|.*\\.(?:png|svg|jpg|webp|woff2)$).*)"],
 };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import mongoose from "mongoose";
-import { activate, addVerifiedDomain, as, callApi, catchRedirect, form, jsonRequest, platformEmails, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
+import { activate, addSentIssue, addVerifiedDomain, as, callApi, catchRedirect, form, jsonRequest, platformEmails, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
 import { POSTSHIBA_ENV, createFakePostshiba } from "./helpers/postshiba.mjs";
 import { invalidations, refusedDistributions } from "./stubs/cloudfront.mjs";
 import { RedirectError } from "./stubs/next-navigation.mjs";
@@ -294,12 +294,14 @@ describe("a deleted account", () => {
 		const bystander = await signIn("bystander@example.com");
 		await activate(user);
 		await createNewsletter(user, "stopped-news");
+		await addSentIssue(user);
 		const { key } = await as(user, () => m.apiKeys.createApiKey(null, form({ name: "Site", level: "full" })));
 		await connectApp(user);
 		await connectApp(bystander);
 		await cancelPlan(user);
 		const newsletter = await m.Newsletter.findOne({ accountId: user.accountId, _id: user.newsletterId }).lean();
 		assert.ok(await withEnv({ MAILCHEAP_CLOUD: "" }, () => m.publicNewsletters.findOpenNewsletter({ slug: user.slug })), "open before");
+		assert.ok(await withEnv({ MAILCHEAP_CLOUD: "" }, () => m.archive.getArchiveNewsletter(user.slug)), "online before");
 
 		const before = Date.now();
 		await deleteAccount(user);
@@ -343,6 +345,7 @@ describe("a deleted account", () => {
 	test("can be restored by signing in within the grace period, and the purge job then does nothing", async () => {
 		const user = await signIn("restored@example.com");
 		await createNewsletter(user, "restored-news");
+		await addSentIssue(user);
 		await deleteAccount(user);
 		const job = findPurgeJob(user);
 

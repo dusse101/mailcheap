@@ -24,6 +24,9 @@ const campaignSchema = new mongoose.Schema(
 		ratesAcceptedAt: { type: Date },
 		// Warm-up: send to the most engaged contacts first, capped at audienceLimit.
 		audienceLimit: { type: Number, min: 1 },
+		// Only this segment's active contacts get it, its conditions read at each send (lib/segments.js). Without one,
+		// every active contact does.
+		segmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Segment" },
 		// Contacts never mailed before go out in steps: a first slice, a check, then the rest (lib/first-send.js), over
 		// restHours in a spread send.
 		firstSend: {

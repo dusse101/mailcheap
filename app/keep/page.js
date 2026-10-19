@@ -3,6 +3,7 @@ import CardNotice from "@/components/CardNotice";
 import FormKeep from "@/components/FormKeep";
 import FormKeepBrand from "@/components/FormKeepBrand";
 import { PageBrandKeepClosed, PageBrandKeepInvalid } from "@/components/PageBrand";
+import StyleTheme from "@/components/StyleTheme";
 import { getArchiveUrls } from "@/lib/archive-hosts";
 import { getLastSignOfLife } from "@/lib/cleanup";
 import { connectDb } from "@/lib/db";
@@ -52,6 +53,7 @@ export default async function KeepPage({ searchParams }) {
 
 	return (
 		<main className="flex min-h-dvh items-center justify-center bg-background px-4 py-16">
+			<StyleTheme theme={newsletter?.theme} />
 			{outcome === "invalid" ? (
 				<CardNotice icon={Link2Off} title="This link doesn't work">
 					It may be older than 90 days. Sign up again to keep getting the newsletter.

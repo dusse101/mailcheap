@@ -12,6 +12,7 @@ import DialogImportContacts from "@/components/DialogImportContacts";
 import FilterContacts from "@/components/FilterContacts";
 import GatePlan from "@/components/GatePlan";
 import HeaderPage from "@/components/HeaderPage";
+import ListSegments from "@/components/ListSegments";
 import MenuContact from "@/components/MenuContact";
 import StateEmpty from "@/components/StateEmpty";
 import TextEmpty from "@/components/TextEmpty";
@@ -31,13 +32,16 @@ import { CONTACTS_PAGE_SIZE, findContactsPage } from "@/lib/contacts";
 import { getAddContactCurl } from "@/lib/docs/reference";
 import { formatDate, formatNumber } from "@/lib/format";
 import { toNewsletterOption } from "@/lib/newsletters";
+import { countSegmentCards, listLiveSegments } from "@/lib/segment-queries";
+import { compileSegment, describeSegment } from "@/lib/segments";
 import { getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
 import { cn } from "@/lib/utils";
 import Contact, { CONTACT_STATUSES } from "@/models/Contact";
 
 export const metadata = { title: "Contacts" };
 
-// The open newsletter's contacts. A newsletter in ?newsletter=, from the filter this page had, opens first.
+// The open newsletter's contacts. A newsletter in ?newsletter=, from the filter this page had, opens first. ?segment=
+// narrows the list to one of its segments.
 export default async function ContactsPage({ searchParams }) {
 	const [view, params] = await Promise.all([getSelectedNewsletter(), searchParams]);
 	openNewsletter(view, params.newsletter, "/contacts");
@@ -46,17 +50,24 @@ export default async function ContactsPage({ searchParams }) {
 	const status = CONTACT_STATUSES.includes(params.status) ? params.status : null;
 	const query = typeof params.q === "string" ? params.q.trim().toLowerCase().slice(0, 254) : "";
 	const page = Math.max(1, Number.parseInt(params.page, 10) || 1);
+	const segments = newsletterId ? await listLiveSegments(account, newsletterId) : [];
+	const segment = segments.find(({ _id }) => String(_id) === params.segment) ?? null;
+	const segmentId = segment ? String(segment._id) : null;
 
-	const { contacts, counts, totalAll, total } = newsletterId
-		? await findContactsPage(account, { newsletterId, status, query, page })
-		: { contacts: [], counts: {}, totalAll: 0, total: 0 };
+	const [{ contacts, counts, totalAll, total }, cardCounts] = newsletterId
+		? await Promise.all([
+				findContactsPage(account, { newsletterId, status, query, page, segmentFilter: segment && { $and: [compileSegment(segment)] } }),
+				countSegmentCards(account, newsletterId, segments),
+			])
+		: [{ contacts: [], counts: {}, totalAll: 0, total: 0 }, null];
 	const pageCount = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
-	// totalAll counts within the search.
-	const hasContacts = totalAll > 0 || Boolean(query && newsletterId && (await Contact.exists(scoped(account, { newsletterId: selected._id }))));
+	// totalAll counts within the search and the segment.
+	const hasContacts =
+		totalAll > 0 || Boolean((query || segment) && newsletterId && (await Contact.exists(scoped(account, { newsletterId: selected._id }))));
 	const newsletter = selected && toNewsletterOption(selected);
 
 	function href(changes) {
-		const next = new URLSearchParams(Object.entries({ status, q: query, page }).filter(([, value]) => value));
+		const next = new URLSearchParams(Object.entries({ segment: segmentId, status, q: query, page }).filter(([, value]) => value));
 		for (const [key, value] of Object.entries(changes)) {
 			if (value) next.set(key, value);
 			else next.delete(key);
@@ -71,7 +82,7 @@ export default async function ContactsPage({ searchParams }) {
 	return (
 		<>
 			<HeaderPage title="Contacts">
-				<ButtonExportContacts newsletterId={newsletterId} status={status} query={query} isDisabled={total === 0} />
+				<ButtonExportContacts newsletterId={newsletterId} status={status} query={query} segmentId={segmentId} isDisabled={total === 0} />
 				{hasContacts && <DialogAddContact newsletter={newsletter} />}
 				<GatePlan reason="import">
 					<DialogImportContacts newsletter={newsletter} />
@@ -81,6 +92,21 @@ export default async function ContactsPage({ searchParams }) {
 			<div className="flex flex-col gap-4">
 				{hasContacts && (
 					<>
+						<ListSegments
+							newsletterId={newsletterId}
+							segments={segments.map((item, index) => ({
+								id: String(item._id),
+								name: item.name,
+								match: item.match,
+								conditions: item.conditions,
+								description: describeSegment(item),
+								contacts: cardCounts.segments[index],
+							}))}
+							selectedId={segmentId}
+							everyoneCount={cardCounts.everyone}
+							hrefFor={(id) => href({ segment: id, page: null })}
+						/>
+
 						<Suspense fallback={<Skeleton className="h-9 w-full rounded-lg" />}>
 							<FilterContacts key={newsletterId} />
 						</Suspense>
@@ -98,14 +124,14 @@ export default async function ContactsPage({ searchParams }) {
 										scroll={false}
 										aria-current={isActive ? "page" : undefined}
 										className={cn(
-											"inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm transition-[color,background-color,box-shadow] duration-150",
+											"inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm transition-[color,background-color] duration-150",
 											isActive
-												? "bg-foreground text-background"
-												: "text-muted-foreground hover:bg-muted hover:text-foreground"
+												? "bg-muted font-medium text-foreground"
+												: "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
 										)}
 									>
 										{key ? key.charAt(0).toUpperCase() + key.slice(1) : "All"}
-										<span className={cn("text-xs tabular-nums", isActive ? "opacity-70" : "opacity-60")}>
+										<span className={cn("text-xs font-normal tabular-nums", isActive ? "text-muted-foreground" : "opacity-60")}>
 											{formatNumber(key ? counts[key] || 0 : totalAll)}
 										</span>
 									</Link>
