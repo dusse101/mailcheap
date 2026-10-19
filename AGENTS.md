@@ -78,3 +78,9 @@ npm run build
 ```
 
 Tests import server actions and route handlers as they are; `tests/setup` stubs Next.js request APIs and every outside service, so nothing reaches the network. A change to behavior comes with its test, and the full suite and lint pass before it's pushed.
+
+## Cursor Cloud specific instructions
+
+- Node.js 22. `npm ci`, then `npm test`, `npm run lint`, and `npm run build`. Tests start their own `mongod` (a replica set); the binary has to be on `PATH`.
+- On boot, MongoDB listens on `127.0.0.1:27017` and `npm run dev` serves http://localhost:3000. The first boot writes `.env.local` (gitignored): a self-hosted server, `SENDING_ENABLED=false`, `ADMIN_EMAILS=admin@example.com`, `SHARED_DOMAIN=letters.example.com`. Sign in as `admin@example.com`. Without `RESEND_API_KEY`, the sign-in code is printed in the dev server log (`[signin] Code for ...`).
+- `SENDING_ENABLED` stays false. Never send to subscribers or trigger a send while testing.
