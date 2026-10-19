@@ -313,7 +313,7 @@ function SectionSignups({ draft, setDraft, set, newsletter, sender }) {
 	const deferredConfirmation = useDeferredValue(confirmation);
 	const html = useMemo(
 		() =>
-			renderEmail({ ...deferredConfirmation, newsletter: { name, postalAddress, theme: newsletter?.theme } })
+			renderEmail({ ...deferredConfirmation, kind: "confirmation", newsletter: { name, postalAddress, theme: newsletter?.theme } })
 				.html.replaceAll(UNSUBSCRIBE_PLACEHOLDER, "#")
 				.replaceAll(CONFIRM_URL_PLACEHOLDER, "#"),
 		[deferredConfirmation, name, postalAddress, newsletter?.theme]
@@ -391,6 +391,7 @@ function SectionWelcome({ draft, setDraft, newsletter, sender, isSendingEnabled,
 				markdown: deferredWelcome.markdown,
 				subject: deferredWelcome.subject,
 				previewText: deferredWelcome.previewText,
+				kind: "welcome",
 				newsletter: { name, postalAddress, theme: newsletter?.theme },
 			}).html.replaceAll(UNSUBSCRIBE_PLACEHOLDER, "#"),
 		[deferredWelcome, name, postalAddress, newsletter?.theme]
@@ -483,7 +484,7 @@ function SectionCleanup({ draft, setDraft, set, newsletter, sender, fromEmail, t
 	const savedCleanup = getCleanupSettings(newsletter);
 	const lastChance = useMemo(() => {
 		const content = getLastChanceContent({ name, fromEmail });
-		const { html } = renderEmail({ ...content, newsletter: { name, postalAddress, theme: newsletter?.theme } });
+		const { html } = renderEmail({ ...content, kind: "last-chance", newsletter: { name, postalAddress, theme: newsletter?.theme } });
 		return { ...content, html: html.replaceAll(UNSUBSCRIBE_PLACEHOLDER, "#").replaceAll(KEEP_URL_PLACEHOLDER, "#") };
 	}, [name, fromEmail, postalAddress, newsletter?.theme]);
 

@@ -34,6 +34,11 @@ const SITE_EXTENSIONS = Object.entries({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	poweredByHeader: false,
+	// The dashboard preview renders emails in the browser. Inlining EMAIL_BRAND lets that preview match a sent
+	// email. Unset stays "", which getEmailBrand treats as off. Vercel rebuilds when the env changes.
+	env: {
+		EMAIL_BRAND: process.env.EMAIL_BRAND || "",
+	},
 	turbopack: { resolveAlias: Object.fromEntries(SITE_EXTENSIONS) },
 	images: {
 		remotePatterns: [
@@ -48,6 +53,14 @@ const nextConfig = {
 			// with CORS.
 			{
 				source: "/fonts/:path*",
+				headers: [
+					{ key: "Access-Control-Allow-Origin", value: "*" },
+					{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" },
+				],
+			},
+			// The email brand's fonts (public/brands/tacoandtell/fonts) load in mail clients, another origin.
+			{
+				source: "/brands/tacoandtell/fonts/:path*",
 				headers: [
 					{ key: "Access-Control-Allow-Origin", value: "*" },
 					{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" },

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
+import { getEmailBrand } from "@/lib/public-brand";
 import { THEME_FONTS } from "@/lib/theme-fonts";
 import { THEME_PRESETS } from "@/lib/themes";
 
@@ -8,6 +9,7 @@ export const metadata = getHelpPageMetadata("design");
 
 export default function DesignPage() {
 	const [mailcheap, ...presets] = THEME_PRESETS;
+	const emailBrand = getEmailBrand();
 
 	return (
 		<ArticleHelp slug="design">
@@ -71,6 +73,13 @@ export default function DesignPage() {
 				Apple Mail and other apps that load fonts show your theme&apos;s. Gmail, Outlook and a few others don&apos;t load fonts:
 				they show the closest system font, a sans-serif, a serif or a monospace like your theme&apos;s. Emails have no shadows.
 			</p>
+			{emailBrand ? (
+				<p>
+					This server also wraps Markdown emails in its own layout, {emailBrand.name}&apos;s: the header, the colors, and a footer
+					that depends on the kind of email. An issue sent as HTML designed elsewhere keeps its own look, and the website keeps the
+					theme.
+				</p>
+			) : null}
 
 			<h2 id="dark-mode">Dark mode</h2>
 			<p>
