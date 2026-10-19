@@ -17,6 +17,7 @@ import HeaderPage from "@/components/HeaderPage";
 import IconWarmup from "@/components/IconWarmup";
 import ImageFavicon from "@/components/ImageFavicon";
 import InputCampaignSlug from "@/components/InputCampaignSlug";
+import LinkHelp from "@/components/LinkHelp";
 import PreviewEmail from "@/components/PreviewEmail";
 import TextEmpty from "@/components/TextEmpty";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,7 @@ export default function CampaignReport({
 								{formatNumber(campaign.firstSend.slice)} contacts who never got an email from you go first. The other{" "}
 								{formatNumber(campaign.firstSend.held)} follow {FIRST_SEND.waitMinutes / 60} hours after them if their bounces and
 								complaints stay low. If they don&apos;t, the rest waits for you to resume, and if they&apos;re far over, your account is
-								blocked.
+								blocked. <LinkHelp article="sending" section="first-send" />
 							</p>
 						)}
 						{campaign.status === "sending" && campaign.sendingUntil && campaign.spreadHours > 0 && (
@@ -150,7 +151,7 @@ export default function CampaignReport({
 								<IconWarmup className="size-3.5 translate-y-px" />
 								<span>
 									It goes out over hours while your account warms up{pace?.warmup ? "" : " to sends this size"}: about{" "}
-									{formatCount(hoursUntil(campaign.sendingUntil), "hour")} to go.
+									{formatCount(hoursUntil(campaign.sendingUntil), "hour")} to go. <LinkHelp article="warm-up" />
 								</span>
 							</p>
 						)}

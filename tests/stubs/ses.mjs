@@ -17,8 +17,8 @@ export const state = {
 function call(name, args) {
 	calls.push({ name, args });
 	if (state.failNext?.name === name) {
-		const { error } = state.failNext;
-		state.failNext = null;
+		const { error, times = 1 } = state.failNext;
+		state.failNext = times > 1 ? { ...state.failNext, times: times - 1 } : null;
 		throw error;
 	}
 }

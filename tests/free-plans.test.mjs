@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
 import Stripe from "stripe";
-import { activate, anonymous, as, callApi, catchNotFound, catchRedirect, form, jsonRequest, listPlanPrices, mockStripe, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addSentIssue, anonymous, as, callApi, catchNotFound, catchRedirect, form, jsonRequest, listPlanPrices, mockStripe, signIn, startTestApp } from "./helpers/app.mjs";
 import { published } from "./stubs/qstash.mjs";
 import { state } from "./stubs/ses.mjs";
 
@@ -243,12 +243,14 @@ test("a free plan stops at its end date like a canceled plan: no sending, no sig
 	const { key } = await createKey(user);
 	assert.equal((await callApi("POST", "/api/v1/contacts", { key, body: { newsletter: user.slug, email: "early@until.example.org" } })).status, 201);
 	const id = await draft(user);
+	await addSentIssue(user);
+	const { getArchiveNewsletter } = await import("../lib/archive-data.js");
+	assert.ok(await getArchiveNewsletter(user.slug), "online before");
 
 	await m.Account.updateOne({ _id: user.accountId }, { $set: { "comp.until": new Date(Date.now() - 1000) } });
 	assert.equal(m.state.hasActiveSubscription(await load(user)), false);
 	assert.equal((await as(user, () => m.campaigns.sendCampaign(id, {}))).code, "subscription_required");
 	assert.equal((await callApi("POST", "/api/v1/contacts", { key, body: { newsletter: user.slug, email: "late@until.example.org" } })).status, 402);
-	const { getArchiveNewsletter } = await import("../lib/archive-data.js");
 	assert.equal(await getArchiveNewsletter(user.slug), null);
 	const billing = await callApi("GET", "/api/v1/billing", { key });
 	assert.deepEqual(

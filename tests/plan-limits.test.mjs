@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { activate, anonymous, as, callApi, catchRedirect, form, jsonRequest, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addSentIssue, anonymous, as, callApi, catchRedirect, form, jsonRequest, signIn, startTestApp } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 import { published } from "./stubs/qstash.mjs";
 import { sent as sesEmails } from "./stubs/ses.mjs";
@@ -240,11 +240,13 @@ describe("blocked and canceled accounts", () => {
 	test("a canceled account takes no signups and sends no signup emails; its archive is offline", async () => {
 		const user = await setup("canceled@example.com", { emails: 100, subscribers: 100, contacts: 1, welcome: true });
 		await createApiKey(user);
+		await addSentIssue(user);
+		const { getArchiveNewsletter } = await import("../lib/archive-data.js");
+		assert.ok(await getArchiveNewsletter(user.slug), "online before");
 		await m.Account.updateOne({ _id: user.accountId }, { $set: { subscriptionStatus: "canceled" } });
 		assert.equal((await signup(user, "too-late@example.org")).status, 402);
 		const formResult = await anonymous(() => m.archive.subscribe(null, form({ newsletter: user.slug, email: "visitor@example.org" })));
 		assert.deepEqual(formResult, { error: "This newsletter is not taking signups" });
-		const { getArchiveNewsletter } = await import("../lib/archive-data.js");
 		assert.equal(await getArchiveNewsletter(user.slug), null);
 
 		const newsletter = await (await import("../models/Newsletter.js")).default.findOne({ accountId: user.accountId }).lean();

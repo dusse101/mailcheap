@@ -29,6 +29,24 @@ const contactSchema = new mongoose.Schema(
 		lastChanceAt: { type: Date },
 		// Bounced without a send of this account: a send skipped it, on the never-email list (lib/global-suppressions.js).
 		undeliverableAt: { type: Date },
+		// The last status changes made by hand or through the API and MCP (lib/contact-status.js): who made each, from
+		// where, and whether it came with the person's consent.
+		statusChanges: {
+			type: [
+				{
+					_id: false,
+					from: { type: String },
+					to: { type: String },
+					at: { type: Date },
+					via: { type: String },
+					userId: { type: mongoose.Schema.Types.ObjectId },
+					apiKeyId: { type: mongoose.Schema.Types.ObjectId },
+					connectionId: { type: String },
+					consent: { type: Boolean },
+				},
+			],
+			default: undefined,
+		},
 		stats: {
 			sent: { type: Number, default: 0 },
 			opens: { type: Number, default: 0 },
@@ -55,6 +73,8 @@ contactSchema.index({ accountId: 1, subscribedAt: -1, _id: -1 });
 contactSchema.index({ accountId: 1, status: 1, subscribedAt: -1, _id: -1 });
 contactSchema.index({ newsletterId: 1, subscribedAt: -1, _id: -1 });
 contactSchema.index({ newsletterId: 1, status: 1, subscribedAt: -1, _id: -1 });
+// Segments on opens (lib/segments.js) read a range of it instead of every active contact of a large list.
+contactSchema.index({ newsletterId: 1, status: 1, lastOpenAt: -1 });
 // The list cleanup totals in newsletter settings.
 contactSchema.index({ newsletterId: 1, lastChanceAt: 1 }, { partialFilterExpression: { lastChanceAt: { $exists: true } } });
 // An admin taking an address off the never-email list finds the contacts it stopped, in every account.

@@ -4,11 +4,11 @@ import { cn } from "@/lib/utils";
 
 // Gridlines with their values on the left and labels under the plot; the chart draws inside.
 // Labels are placed by x (0 to 1) and shift by the same ratio, so the first and last stay inside.
-export default function ChartFrame({ scale, xLabels, className, children }) {
+export default function ChartFrame({ scale, xLabels, formatTick = formatNumber, className, children }) {
 	const ticks = scale.ticks.map((tick) => ({
 		tick,
 		top: `${(1 - toRatio(tick, scale)) * 100}%`,
-		label: formatNumber(tick),
+		label: formatTick(tick),
 	}));
 	const widest = ticks.reduce((longest, { label }) => (label.length > longest.length ? label : longest), "");
 

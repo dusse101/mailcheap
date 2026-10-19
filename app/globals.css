@@ -128,6 +128,8 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --image-backdrop: white;
+  --mark-background: color-mix(in oklab, #fff4d1 22%, transparent);
 }
 
 @layer base {
@@ -205,9 +207,9 @@ html:has([data-campaign-steps]) {
 
 /* The dashboard's bottom right corner. Where SupportChat (components/SiteExtensions.jsx) renders [data-support-chat],
    MailCheap Cloud's support chat keeps its button there, 54px wide: 14px from the edges under 480px wide, 24px from the
-   right and 20px from the bottom above. The get-started pill and a save bar, both 40px high, sit on its center line;
-   the pill ends 12px to its left, --chat-clearance from the edge, and so does a save bar whose column reaches that far.
-   Without the chat, the pill takes the corner. */
+   right and 20px from the bottom above. The get-started pill, 40px high, and a save bar, 56px high, sit on its center
+   line; the pill ends 12px to its left, --chat-clearance from the edge, and so does a save bar that would reach that
+   far. Without the chat, the pill takes the corner. */
 @property --chat-clearance {
   syntax: "<length>";
   inherits: true;
@@ -217,6 +219,7 @@ html:has([data-campaign-steps]) {
 html {
   --dock-right: 1rem;
   --dock-bottom: 1rem;
+  --save-bar-bottom: var(--dock-bottom);
 
   @media (width >= 40rem) {
     --dock-right: 1.5rem;
@@ -230,6 +233,7 @@ html:has([data-support-chat]) {
   --chat-clearance: calc(var(--chat-right) + 54px + 12px);
   --dock-right: var(--chat-clearance);
   --dock-bottom: calc(var(--chat-bottom) + 7px);
+  --save-bar-bottom: calc(var(--chat-bottom) - 1px);
 
   @media (width >= 480px) {
     --chat-right: 24px;
@@ -240,6 +244,11 @@ html:has([data-support-chat]) {
 /* BarSave renders [data-save-bar][data-shown] while a save bar shows: the get-started pill steps aside for it (the
    save-bar variant). */
 @custom-variant save-bar (html:has([data-save-bar][data-shown]) &);
+
+/* A spring with a little bounce (0.3), sampled for linear(): BarSave's first entrance overshoots by 4.6% and settles. */
+@theme {
+  --ease-settle: linear(0, 0.02, 0.072, 0.146, 0.233, 0.327, 0.423, 0.517, 0.605, 0.685, 0.757, 0.82, 0.874, 0.919, 0.955, 0.984, 1.006, 1.023, 1.034, 1.041, 1.045, 1.046, 1.045, 1.043, 1.039, 1.035, 1.031, 1.027, 1.022, 1.018, 1.014, 1.011, 1.008, 1.006, 1.004, 1.002, 1.001, 1, 0.999, 0.998, 1);
+}
 
 @keyframes enter {
   from {
@@ -444,23 +453,32 @@ html:has([data-support-chat]) {
   }
 }
 
+/* Newsletter themes (lib/themes.js) set --theme-* on their archive's pages and in the dashboard's previews. Unset, a
+   font var() leaves the inherited font, and the other fallbacks are the dashboard's own type. */
+@utility font-theme-heading {
+  font-family: var(--theme-font-heading);
+  font-weight: var(--theme-heading-weight, 600);
+  letter-spacing: var(--theme-heading-tracking, -0.025em);
+}
+
 /* Archive issues: cleaned editor and Markdown HTML, so plain elements without classes. */
 .prose-issue {
   font-size: 1.0625rem;
-  line-height: 1.75;
+  line-height: var(--theme-prose-leading, 1.75);
   color: color-mix(in oklab, var(--foreground) 86%, transparent);
   overflow-wrap: break-word;
 
   & :where(p, ul, ol, table, blockquote, pre) {
-    margin: 0 0 1.25em;
+    margin: 0 0 var(--theme-prose-gap, 1.25em);
   }
   & > :first-child {
     margin-top: 0;
   }
   & :where(h1, h2, h3, h4) {
     color: var(--foreground);
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-family: var(--theme-font-heading);
+    font-weight: var(--theme-heading-weight, 600);
+    letter-spacing: var(--theme-heading-tracking, -0.02em);
     line-height: 1.3;
     scroll-margin-top: 5rem;
   }
@@ -481,11 +499,11 @@ html:has([data-support-chat]) {
     font-weight: 600;
   }
   & a {
-    color: var(--foreground);
+    color: var(--theme-link, var(--foreground));
     font-weight: 500;
     text-decoration: underline;
     text-decoration-thickness: 1px;
-    text-decoration-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+    text-decoration-color: var(--theme-link-decoration, color-mix(in oklab, var(--foreground) 30%, transparent));
     text-underline-offset: 3px;
     transition: text-decoration-color 150ms;
   }
@@ -513,13 +531,19 @@ html:has([data-support-chat]) {
   }
   & img {
     margin: 2em auto;
-    border-radius: 0.75rem;
+    border-radius: var(--theme-image-radius, 0.75rem);
     outline: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
     outline-offset: -1px;
   }
-  /* Email images are drawn for a white page; transparent ones vanish on a dark one. */
-  .dark & img {
-    background: white;
+  & img[data-align="left"] {
+    margin-left: 0;
+  }
+  & img[data-align="right"] {
+    margin-right: 0;
+  }
+  /* Email images are drawn for a white page; transparent ones vanish on a dark one. Dark mode and dark themes set it. */
+  & img {
+    background: var(--image-backdrop, transparent);
   }
   & small {
     display: block;
@@ -542,17 +566,14 @@ html:has([data-support-chat]) {
     padding: 0.125em 0;
     border-radius: 0.25em;
     color: inherit;
-    background: #fff4d1;
+    background: var(--mark-background, #fff4d1);
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
-  }
-  .dark & mark {
-    background: color-mix(in oklab, #fff4d1 22%, transparent);
   }
   & [data-callout] {
     margin: 2em 0;
     padding: 1.5rem;
-    border-radius: 1rem;
+    border-radius: var(--theme-box-radius, 1rem);
     background: var(--muted);
   }
   & [data-callout] > :first-child {
@@ -609,6 +630,18 @@ html:has([data-support-chat]) {
   & [data-resize-container] {
     justify-content: center;
     margin: 2em 0;
+  }
+  & [data-resize-container]:has(img[data-align="left"]) {
+    justify-content: flex-start;
+  }
+  & [data-resize-container]:has(img[data-align="right"]) {
+    justify-content: flex-end;
+  }
+  /* A block picked up by its drag handle, or selected with it. */
+  & > :is(p, h1, h2, h3, ul, ol, blockquote, [data-callout]).ProseMirror-selectednode {
+    border-radius: 0.375rem;
+    background-color: color-mix(in oklab, var(--ring) 14%, transparent);
+    box-shadow: 0 0 0 0.375rem color-mix(in oklab, var(--ring) 14%, transparent);
   }
   & [data-resize-container] img {
     margin: 0;

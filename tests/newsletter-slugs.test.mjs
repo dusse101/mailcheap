@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import mongoose from "mongoose";
-import { activate, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addSentIssue, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 
 // A newsletter's slug, as the settings form shows it: checked while it's typed (check_newsletter_slug), unique down to
 // the database, and what saving a new one does to the old subdomain.
@@ -108,6 +108,7 @@ describe("slugs in the database", () => {
 describe("a new slug", () => {
 	test("leaves the old subdomain answering for the links in sent emails, and showing no page", async () => {
 		const user = await customer("slug-move@example.com", "old-notes");
+		await addSentIssue(user);
 		assert.equal((await m.archive.getArchiveNewsletter("old-notes"))?.slug, "old-notes");
 		assert.equal((await saveSlug(user, "new-notes")).ok, true);
 

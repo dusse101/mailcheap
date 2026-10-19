@@ -186,7 +186,7 @@ describe("PostShiba tenants", () => {
 
 	test("a setup that failed halfway finishes later, with no second tenant", async () => {
 		const user = await signIn("ps-retry@example.com");
-		fake.fail({ method: "POST", path: /\/smtp_credentials$/, status: 503, body: { error: "unavailable" } });
+		fake.fail({ method: "POST", path: /\/smtp_credentials$/, status: 503, body: { error: "unavailable" }, times: 2 });
 		await m.billing.applySubscription(await loadAccount(user), subscription("ps-retry"));
 		let account = await loadAccount(user);
 		assert.equal(account.subscriptionStatus, "active", "the plan starts anyway");
@@ -201,6 +201,18 @@ describe("PostShiba tenants", () => {
 		assert.equal(tenants.length, 1);
 		assert.equal(account.postshiba.tenantId, tenants[0].id, "found by its slug");
 		assert.ok(account.postshiba.provisionedAt);
+	});
+
+	test("when two plan starts race to create the tenant, the one that loses tries again and nobody is alerted", async () => {
+		const user = await signIn("ps-race@example.com");
+		const alerts = () => platformEmails.filter(({ subject }) => subject === "[MailCheap] PostShiba tenant not created").length;
+		const before = alerts();
+		fake.fail({ method: "POST", path: /\/tenants$/, status: 500, body: { error: "Internal Server Error" } });
+		await m.billing.applySubscription(await loadAccount(user), subscription("ps-race"));
+		const account = await loadAccount(user);
+		assert.ok(account.postshiba.provisionedAt, "set up on the second try");
+		assert.equal([...fake.state.tenants.values()].filter((tenant) => tenant.slug === `mc-${user.accountId}`).length, 1);
+		assert.equal(alerts(), before, "no alert");
 	});
 });
 

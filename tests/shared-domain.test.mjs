@@ -201,6 +201,19 @@ describe("shared addresses", () => {
 		assert.equal(hasRecordsFor(old.domain), false);
 	});
 
+	test("when two plan starts set up the same address at once, the run that loses finds it set up and doesn't alert", async () => {
+		const user = await customer("race@example.com", "race-news");
+		const stored = await m.Newsletter.findOne({ accountId: user.accountId }).lean();
+		const alerts = () => platformEmails.filter(({ subject }) => subject === "[MailCheap] Shared address not set up").length;
+		const before = alerts();
+		state.failNext = { name: "createDomainIdentity", error: new Error("500 Internal Server Error") };
+
+		const result = await m.sharedSender.syncSharedSender({ account: user.account, newsletter: { ...stored, sharedSender: undefined } });
+		assert.equal(result?.domain, stored.sharedSender.domain, "it returns the address the other run saved");
+		assert.equal(alerts(), before, "no alert");
+		assert.ok(state.identities.has(stored.sharedSender.domain), "the other run's domain stays at the provider");
+	});
+
 	test("a new slug whose records the DNS helper refuses leaves nothing at the provider, and a later save sets it up", async () => {
 		const user = await customer("refused@example.com", "refused-old");
 		const { sharedSender: old } = await m.Newsletter.findOne({ accountId: user.accountId }).lean();

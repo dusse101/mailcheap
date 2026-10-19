@@ -7,7 +7,7 @@ export default function StatusSaved({ savedAt }) {
 		<span aria-live="polite" className="text-xs text-muted-foreground">
 			{savedAt && (
 				<span key={savedAt} className="flex items-center gap-1.5 animate-saved">
-					<Check className="size-3.5 animate-icon-in" />
+					<Check className="size-3.5 text-emerald-500 animate-icon-in" />
 					Saved
 				</span>
 			)}

@@ -27,7 +27,6 @@ export default function MenuAccount({
 	email,
 	blockedBy,
 	blockReason,
-	providerName,
 	hasLimits,
 	canSpread,
 	isSpreading,
@@ -97,7 +96,7 @@ export default function MenuAccount({
 				<DialogContent className={dialog === "free-plan" ? "sm:max-w-md" : "sm:max-w-sm"}>
 					{dialog === "free-plan" && <FormFreePlan accountId={accountId} email={email} freePlan={freePlan} onDone={() => setDialog(null)} />}
 					{dialog === "end-free-plan" && <FormEndFreePlan accountId={accountId} email={email} onDone={() => setDialog(null)} />}
-					{dialog === "block" && <FormBlock accountId={accountId} email={email} providerName={providerName} onDone={() => setDialog(null)} />}
+					{dialog === "block" && <FormBlock accountId={accountId} email={email} onDone={() => setDialog(null)} />}
 					{dialog === "unblock" && (
 						<FormUnblock accountId={accountId} email={email} blockedBy={blockedBy} blockReason={blockReason} onDone={() => setDialog(null)} />
 					)}
@@ -110,7 +109,7 @@ export default function MenuAccount({
 	);
 }
 
-function FormBlock({ accountId, email, providerName, onDone }) {
+function FormBlock({ accountId, email, onDone }) {
 	const [reason, setReason] = useState("");
 	const [isPending, startTransition] = useTransition();
 
@@ -130,7 +129,7 @@ function FormBlock({ accountId, email, providerName, onDone }) {
 				<DialogTitle>Block account?</DialogTitle>
 				<DialogDescription>
 					{email ?? "This account"} sends nothing until you unblock it, welcome emails included, and can only read, pause and
-					cancel. Its {providerName} tenant is suspended.
+					cancel.
 				</DialogDescription>
 			</DialogHeader>
 			<Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason, shown to them" maxLength={200} />

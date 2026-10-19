@@ -3,19 +3,18 @@ import IconWarmup from "@/components/IconWarmup";
 import MenuAccount from "@/components/MenuAccount";
 import TextEmpty from "@/components/TextEmpty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BLOCKED_BY, getAccountStatus, isBlocked } from "@/lib/account-state";
+import { describeBlocker, getAccountStatus, isBlocked } from "@/lib/account-state";
 import { LIMITS, isCloud } from "@/lib/config";
-import { getEmailProvider } from "@/lib/email-provider";
 import { formatCompact, formatDate, formatNumber } from "@/lib/format";
 import { getAccountLimits, getAccountPlan, getPlan, hasActiveFreePlan, isOnFreePlan } from "@/lib/plans";
 import { getWarmup } from "@/lib/send-spread";
 import { cn } from "@/lib/utils";
 
-export default function TableAccounts({ accounts }) {
-	const provider = getEmailProvider();
+// A box that scrolls under its header, so a long list stays short on the page.
+export default function TableAccounts({ accounts, pinnedId }) {
 	const hasPlans = isCloud();
 	return (
-		<div className="overflow-hidden rounded-xl shadow-border">
+		<div className="overflow-hidden rounded-xl bg-card shadow-border [&_[data-slot=table-container]]:max-h-[min(30rem,70dvh)] [&_[data-slot=table-container]]:overflow-y-auto [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
 			<Table>
 				<TableHeader>
 					<TableRow className="hover:bg-transparent">
@@ -25,7 +24,6 @@ export default function TableAccounts({ accounts }) {
 						<TableHead className="hidden text-right md:table-cell">Emails this month</TableHead>
 						<TableHead className="hidden text-right md:table-cell">Subscribers</TableHead>
 						<TableHead className="hidden text-right lg:table-cell">Last 7 days</TableHead>
-						<TableHead className="hidden xl:table-cell">{provider.name} tenant</TableHead>
 						<TableHead className="hidden text-right sm:table-cell">Created</TableHead>
 						<TableHead className="w-12 pr-2" />
 					</TableRow>
@@ -37,9 +35,9 @@ export default function TableAccounts({ accounts }) {
 						const limits = getAccountLimits(account);
 						const hasOverrides = Object.values(account.limitOverrides ?? {}).some((value) => value !== undefined && value !== null);
 						const isSpreading = getWarmup(account) !== null;
-						const blockedBy = isBlocked(account) ? `Blocked by ${BLOCKED_BY[account.pausedBy] ?? "an admin"}` : null;
+						const blockedBy = isBlocked(account) ? `Blocked by ${describeBlocker(account.pausedBy)}` : null;
 						return (
-							<TableRow key={account._id} className="tabular-nums">
+							<TableRow key={account._id} data-state={account._id === pinnedId ? "selected" : undefined} className="tabular-nums">
 								<TableCell className="max-w-0 py-2.5 pl-4 sm:w-1/4">
 									<span className="block truncate font-medium">{account.ownerEmail ?? <TextEmpty />}</span>
 									{blockedBy && (
@@ -74,9 +72,6 @@ export default function TableAccounts({ accounts }) {
 								<TableCell className="hidden text-right lg:table-cell">
 									<Health health={account.health} />
 								</TableCell>
-								<TableCell className="hidden max-w-0 xl:table-cell">
-									<Tenant tenant={provider.describeTenant(account)} />
-								</TableCell>
 								<TableCell className="hidden text-right text-muted-foreground sm:table-cell">
 									{formatDate(account.createdAt)}
 								</TableCell>
@@ -86,7 +81,6 @@ export default function TableAccounts({ accounts }) {
 										email={account.ownerEmail}
 										blockedBy={blockedBy}
 										blockReason={account.pauseReason ?? null}
-										providerName={provider.name}
 										hasLimits={hasPlans}
 										canSpread={hasPlans}
 										isSpreading={isSpreading}
@@ -145,33 +139,6 @@ function Health({ health }) {
 function Rate({ value = 0, limit, digits = 2 }) {
 	return <span className={cn(value > limit && "text-red-600 dark:text-red-400")}>{(value * 100).toFixed(digits)}%</span>;
 }
-
-// The account's tenant at the active provider (describeTenant in lib/email-provider), with its status there.
-function Tenant({ tenant }) {
-	if (!tenant) return <span className="text-xs text-muted-foreground">No tenant yet</span>;
-	const isStopped = STOPPED_TENANT_STATUSES.has(tenant.status);
-	return (
-		<span className="flex min-w-0 flex-col text-xs">
-			<span className="truncate font-mono" title={tenant.slug ?? tenant.id}>
-				{tenant.id}
-			</span>
-			<span className={cn("truncate", isStopped ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
-				{TENANT_STATUSES[tenant.status] ?? tenant.status ?? "Status unknown"}
-			</span>
-			{tenant.detail && <span className="truncate text-muted-foreground">{tenant.detail}</span>}
-		</span>
-	);
-}
-
-const TENANT_STATUSES = {
-	active: "Active",
-	suspended: "Suspended with the account",
-	operator_hold: "Held by PostShiba (operator_hold)",
-	ENABLED: "Enabled",
-	DISABLED: "Paused by SES",
-	REINSTATED: "Reinstated",
-};
-const STOPPED_TENANT_STATUSES = new Set(["suspended", "operator_hold", "DISABLED"]);
 
 // Without a limit (self-hosted), the count alone.
 function Usage({ used, limit, isCustom }) {

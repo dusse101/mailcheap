@@ -56,6 +56,16 @@ const newsletterSchema = new mongoose.Schema(
 			previewText: { type: String, trim: true },
 			markdown: { type: String },
 		},
+		// Its look on its website and in its emails (lib/themes.js): a preset, and only what was changed on top of it.
+		theme: {
+			preset: { type: String, trim: true },
+			colors: { background: { type: String }, text: { type: String }, accent: { type: String } },
+			fonts: { heading: { type: String }, body: { type: String } },
+			headingWeight: { type: Number },
+			radius: { type: String },
+			shadow: { type: String },
+			spacing: { type: String },
+		},
 	},
 	{ timestamps: true }
 );

@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useEffectEvent, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import {
 	ArrowRight,
 	CalendarClock,
-	Check,
 	ChevronLeft,
 	CircleAlert,
+	CircleX,
 	Copy,
 	Eye,
 	FlaskConical,
@@ -24,24 +24,25 @@ import CardSettings from "@/components/CardSettings";
 import DialogDiscardCampaign from "@/components/DialogDiscardCampaign";
 import DialogPreviewEmail from "@/components/DialogPreviewEmail";
 import EditorRich from "@/components/EditorRich";
-import IconWarmup from "@/components/IconWarmup";
 import ListChecks from "@/components/ListChecks";
 import NavSteps from "@/components/NavSteps";
 import PanelSend from "@/components/PanelSend";
 import RowCampaign from "@/components/RowCampaign";
+import StatusSaved from "@/components/StatusSaved";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { getCheckFix } from "@/lib/campaign-steps";
-import { formatCount, formatSendTime } from "@/lib/format";
 import { markdownToHtml } from "@/lib/markdown";
 import { getPresendChecks } from "@/lib/presend-checks";
 import { UNSUBSCRIBE_PLACEHOLDER, renderEmail, withResponsiveImages } from "@/lib/render-email";
-import { getPaceHours } from "@/lib/send-spread";
+import { SEGMENT_DELETED } from "@/lib/segments";
 import { toast } from "@/lib/toast";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { usePaywall } from "@/lib/use-paywall";
@@ -58,6 +59,9 @@ export default function FormCampaign({
 	campaign,
 	newsletter,
 	audienceCount,
+	everyoneCount,
+	segments,
+	isSegmentDeleted,
 	senderProblem,
 	isSendingEnabled,
 	testEmail,
@@ -82,7 +86,7 @@ export default function FormCampaign({
 		body: initialBody,
 	});
 	const save = useCallback((snapshot) => saveCampaign(campaign._id, { ...snapshot, format }), [campaign._id, format]);
-	const { isDirty, isSaving, error, flush } = useAutosave(values, save);
+	const { isDirty, isSaving, savedAt, error, flush } = useAutosave(values, save);
 	const [isTesting, startTesting] = useTransition();
 	const [isWorking, startWorking] = useTransition();
 	const toastError = useToastError();
@@ -119,7 +123,7 @@ export default function FormCampaign({
 		() => withResponsiveImages(rendered.html.replaceAll(UNSUBSCRIBE_PLACEHOLDER, "#")),
 		[rendered.html]
 	);
-	const { checks, blocking } = getPresendChecks({
+	const { checks } = getPresendChecks({
 		campaign: { ...campaign, ...values },
 		newsletter,
 		rendered,
@@ -127,10 +131,14 @@ export default function FormCampaign({
 		isSendingEnabled,
 		planProblem,
 	});
-	// Without a plan, Send and Schedule open the paywall first; the checks wait until there's one.
-	const blockingMessage = !hasPlan ? null : isUploading ? UPLOADING_MESSAGE : blocking[0]?.message;
 	const reviewChecks = checks.map((check) => ({ ...check, fix: getCheckFix(check, { newsletterId: newsletter._id }) }));
-	const warmupCheck = getWarmupCheck(pace, { emails: audienceCount, newContacts });
+	// Without a plan, Send and Schedule open the paywall first, and the checks wait until there's one.
+	const accountProblems = hasPlan ? reviewChecks.filter(({ isAccount, isOk }) => isAccount && !isOk) : [];
+	const blocking = [
+		...(isUploading ? [{ id: "uploading", message: UPLOADING_MESSAGE }] : []),
+		...(isSegmentDeleted ? [{ id: "segment", message: SEGMENT_DELETED }] : []),
+		...reviewChecks.filter(({ isOk, isWarning }) => !isOk && !isWarning),
+	];
 	const sending = useSendCampaign({
 		campaignId: campaign._id,
 		audienceCount,
@@ -139,7 +147,7 @@ export default function FormCampaign({
 		scheduledAt,
 		isCleanupEnabled: Boolean(newsletter.cleanup?.enabled),
 		sendTimes,
-		blockingMessage,
+		blocking,
 		hasPlan,
 		onBeforeSend: persist,
 	});
@@ -184,8 +192,9 @@ export default function FormCampaign({
 		target?.scrollIntoView({ block: "center" });
 	}
 
-	function openPreview(event) {
-		previewOpenerRef.current = event.currentTarget;
+	// opener: what gets the focus back once the preview closes.
+	function openPreview(opener) {
+		previewOpenerRef.current = opener;
 		setIsPreviewOpen(true);
 	}
 
@@ -224,41 +233,40 @@ export default function FormCampaign({
 
 	const sendAction =
 		sending.choice === "now"
-			? { label: "Send now", icon: Send, reason: "send", run: () => sending.setIsConfirmOpen(true) }
-			: { label: "Schedule", icon: CalendarClock, reason: "schedule", run: sending.schedule };
+			? { label: "Send now", icon: Send, reason: "send", title: "Before you send", run: () => sending.setIsConfirmOpen(true) }
+			: { label: "Schedule", icon: CalendarClock, reason: "schedule", title: "Before you schedule", run: sending.schedule };
 	const action = {
 		write: { label: "Next: review", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("review") },
-		review: { label: "Next: send", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("send"), problem: blockingMessage },
+		review: { label: "Next: send", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("send") },
 		send: {
 			label: sendAction.label,
 			icon: sendAction.icon,
 			onClick: () => (hasPlan ? sendAction.run() : paywall.open(sendAction.reason)),
-			problem: sending.problem,
+			problems: sending.problems,
+			problemsTitle: sendAction.title,
 			isPending: sending.isPending,
 		},
 	}[step];
 
+	// Saved shows for a moment after each save, first in every step so a step change doesn't replay it.
 	function renderStatus() {
-		if (error) return <StatusSave isSaving={false} error={error} onRetry={flush} />;
-		if (action.problem) return <TextProblem>{action.problem}</TextProblem>;
-		if (step === "write") {
-			return (
-				<>
-					<StatusSave isSaving={isDirty || isSaving} error={null} onRetry={flush} />
-					<Button variant="ghost" size="sm" onClick={openPreview} aria-label="Preview" className="text-muted-foreground max-sm:px-2">
-						<Eye data-icon="inline-start" />
-						<span className="max-sm:sr-only">Preview</span>
-					</Button>
-				</>
-			);
-		}
-		if (step !== "send") return null;
+		if (error) return <ButtonRetrySave error={error} onRetry={flush} />;
+		const saved = <StatusSaved savedAt={savedAt} />;
+		if (step !== "write") return saved;
 		return (
-			<span className="truncate text-sm text-muted-foreground tabular-nums">
-				{sending.choice === "now"
-					? `To ${formatCount(sending.sendRecipients, "contact")}`
-					: sending.sendAt && formatSendTime(sending.sendAt)}
-			</span>
+			<>
+				{saved}
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={(event) => openPreview(event.currentTarget)}
+					aria-label="Preview"
+					className="text-muted-foreground max-sm:px-2"
+				>
+					<Eye data-icon="inline-start" />
+					<span className="max-sm:sr-only">Preview</span>
+				</Button>
+			</>
 		);
 	}
 
@@ -266,6 +274,10 @@ export default function FormCampaign({
 	const menu = (
 		<MenuMore
 			isWorking={isWorking}
+			isTesting={isTesting}
+			isTestDisabled={isTestDisabled}
+			onTest={sendTest}
+			onPreview={openPreview}
 			onDuplicate={() => runAction(duplicateCampaign)}
 			onDiscard={() => setIsDiscardOpen(true)}
 		/>
@@ -282,12 +294,14 @@ export default function FormCampaign({
 				<div className="hidden min-w-0 lg:flex">{title}</div>
 				<NavSteps step={step} onStep={goToStep} />
 				<div className="hidden min-w-0 items-center justify-end gap-2 lg:flex">
-					<BarAction action={action} status={renderStatus()} />
+					<BarAction action={action} status={renderStatus()} onEdit={editField} />
 					{menu}
 				</div>
 			</header>
 
 			<div className="mx-auto w-full max-w-2xl">
+				{step !== "write" && accountProblems.length > 0 && <NoticeAccountProblems problems={accountProblems} />}
+
 				<section aria-label="Write" hidden={step !== "write"}>
 					<div className="overflow-hidden rounded-xl bg-card shadow-border animate-enter">
 						<div className="divide-y divide-border/60 border-b border-border/60">
@@ -334,7 +348,7 @@ export default function FormCampaign({
 
 				<section aria-label="Review" hidden={step !== "review"} className="flex flex-col gap-6">
 					<ListChecks
-						checks={warmupCheck ? [...reviewChecks, warmupCheck] : reviewChecks}
+						checks={reviewChecks.filter(({ isAccount }) => !isAccount)}
 						renderFix={({ fix }) =>
 							fix && (
 								<ButtonFix
@@ -360,7 +374,7 @@ export default function FormCampaign({
 							icon={Eye}
 							title="Preview"
 							description="On desktop and mobile, at their real width"
-							onClick={openPreview}
+							onClick={(event) => openPreview(event.currentTarget)}
 						/>
 					</CardSettings>
 				</section>
@@ -372,6 +386,9 @@ export default function FormCampaign({
 						newsletter={newsletter}
 						subject={values.subject}
 						audienceCount={audienceCount}
+						everyoneCount={everyoneCount}
+						segments={segments}
+						isSegmentDeleted={isSegmentDeleted}
 						emailsLeft={emailsLeft}
 						pace={pace}
 						newContacts={newContacts}
@@ -387,7 +404,7 @@ export default function FormCampaign({
 				data-shown={isCompact ? "" : undefined}
 				className="fixed right-(--dock-right) bottom-(--dock-bottom) left-4 z-30 flex h-12 items-center rounded-xl bg-card p-1.5 pl-4 shadow-float md:left-64 lg:hidden"
 			>
-				<BarAction action={action} status={renderStatus()} className="w-full" />
+				<BarAction action={action} status={renderStatus()} onEdit={editField} side="top" className="w-full" />
 			</div>
 
 			<DialogPreviewEmail
@@ -414,19 +431,24 @@ export default function FormCampaign({
 	);
 }
 
-// The checklist's warm-up row, for a send to everyone: while the account warms up, or when the send would go out over
-// hours (lib/send-spread.js). It never blocks and isn't counted.
-function getWarmupCheck(pace, { emails, newContacts }) {
-	const hours = getPaceHours(pace, { emails, newContacts });
-	if (!hours && !pace?.warmup) return null;
-	const { warmup } = pace;
-	return {
-		id: "warmup",
-		label: hours ? `Goes out over ${formatCount(hours, "hour")}` : "Sends now",
-		detail: warmup ? (warmup.hasStarted ? `Warm-up day ${warmup.day} of ${warmup.days}` : "Starts the warm-up") : null,
-		isOk: true,
-		icon: IconWarmup,
-	};
+// Above the review and send steps while the account can't send: the account's doing rather than the email's, so not
+// in its checklist.
+function NoticeAccountProblems({ problems }) {
+	return (
+		<div role="status" className="mb-6 flex flex-col gap-2 animate-enter">
+			{problems.map(({ id, message, fix }) => (
+				<div key={id} className="flex min-h-12 items-center gap-3 rounded-xl bg-red-500/10 py-2 pr-2 pl-4 text-sm">
+					<CircleX aria-hidden="true" className="size-4 shrink-0 text-red-500" />
+					<p className="min-w-0 flex-1 font-medium text-pretty">{message}</p>
+					{fix?.href && (
+						<Button asChild size="sm" variant="outline" className="bg-background">
+							<Link href={fix.href}>{fix.label}</Link>
+						</Button>
+					)}
+				</div>
+			))}
+		</div>
+	);
 }
 
 function TitleCampaign({ title, newsletter, status }) {
@@ -446,20 +468,45 @@ function TitleCampaign({ title, newsletter, status }) {
 	);
 }
 
-function MenuMore({ isWorking, onDuplicate, onDiscard }) {
+// The test and the preview from any step. A dialog opened from here keeps the focus the menu would give back to its
+// button as it closes; the preview hands it to that button once it closes, as the item that opened it is gone.
+function MenuMore({ isWorking, isTesting, isTestDisabled, onTest, onPreview, onDuplicate, onDiscard }) {
+	const triggerRef = useRef(null);
+	const isOpeningDialogRef = useRef(false);
+
+	function openDialog(open) {
+		isOpeningDialogRef.current = true;
+		open();
+	}
+
+	function keepDialogFocus(event) {
+		if (!isOpeningDialogRef.current) return;
+		isOpeningDialogRef.current = false;
+		event.preventDefault();
+	}
+
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<Button variant="ghost" size="icon" aria-label="More" disabled={isWorking}>
+				<Button ref={triggerRef} variant="ghost" size="icon" aria-label="More" disabled={isWorking}>
 					<MoreHorizontal />
 				</Button>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end">
+			<DropdownMenuContent align="end" onCloseAutoFocus={keepDialogFocus} className="w-52">
+				<DropdownMenuItem onSelect={onTest} disabled={isTestDisabled || isTesting}>
+					{isTesting ? <Loader2 className="animate-spin" /> : <FlaskConical />}
+					Send a test email
+				</DropdownMenuItem>
+				<DropdownMenuItem onSelect={() => openDialog(() => onPreview(triggerRef.current))}>
+					<Eye />
+					Preview
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
 				<DropdownMenuItem onSelect={onDuplicate}>
 					<Copy />
 					Duplicate
 				</DropdownMenuItem>
-				<DropdownMenuItem variant="destructive" onSelect={onDiscard}>
+				<DropdownMenuItem variant="destructive" onSelect={() => openDialog(onDiscard)}>
 					<Trash2 />
 					Discard
 				</DropdownMenuItem>
@@ -468,47 +515,68 @@ function MenuMore({ isWorking, onDuplicate, onDiscard }) {
 	);
 }
 
-// The step's one button, with what it waits for, or the step's status, next to it. The width doesn't change from a
-// step to the next.
-function BarAction({ action, status, className }) {
-	const statusId = useId();
+// The step's one button, with the step's status next to it; the width doesn't change from a step to the next. What
+// stops it shows when it's pressed, each with its fix. A fix keeps the focus it moves; otherwise it goes back to the button.
+function BarAction({ action, status, onEdit, side = "bottom", className }) {
+	const [isOpen, setIsOpen] = useState(false);
+	const buttonRef = useRef(null);
+	const isFixingRef = useRef(false);
 	const Icon = action.icon;
+	const problems = action.problems ?? [];
+
+	function fix(field) {
+		isFixingRef.current = true;
+		setIsOpen(false);
+		onEdit(field);
+	}
+
+	function returnFocus(event) {
+		event.preventDefault();
+		if (!isFixingRef.current) buttonRef.current?.focus();
+		isFixingRef.current = false;
+	}
 
 	return (
 		<div className={cn("flex min-w-0 items-center gap-3", className)}>
-			<div id={statusId} className="flex min-w-0 flex-1 items-center justify-start gap-1 lg:justify-end">
-				{status}
-			</div>
-			<Button
-				onClick={action.onClick}
-				disabled={Boolean(action.problem) || action.isPending}
-				aria-describedby={action.problem ? statusId : undefined}
-				className="min-w-32"
-			>
-				{action.isPending ? (
-					<Loader2 className="animate-spin" />
-				) : action.isIconAfter ? (
-					<>
-						{action.label}
-						<Icon data-icon="inline-end" />
-					</>
-				) : (
-					<>
-						<Icon data-icon="inline-start" />
-						{action.label}
-					</>
-				)}
-			</Button>
+			<div className="flex min-w-0 flex-1 items-center justify-start gap-1 lg:justify-end">{status}</div>
+			<Popover open={isOpen && problems.length > 0} onOpenChange={setIsOpen}>
+				<PopoverAnchor asChild>
+					<Button
+						ref={buttonRef}
+						onClick={() => (problems.length > 0 ? setIsOpen(true) : action.onClick())}
+						disabled={action.isPending}
+						aria-haspopup={problems.length > 0 ? "dialog" : undefined}
+						className="min-w-32"
+					>
+						{action.isPending ? (
+							<Loader2 className="animate-spin" />
+						) : action.isIconAfter ? (
+							<>
+								{action.label}
+								<Icon data-icon="inline-end" />
+							</>
+						) : (
+							<>
+								<Icon data-icon="inline-start" />
+								{action.label}
+							</>
+						)}
+					</Button>
+				</PopoverAnchor>
+				<PopoverContent side={side} align="end" onCloseAutoFocus={returnFocus} className="w-80 p-0">
+					<p className="px-4 pt-3.5 pb-1 text-sm font-medium">{action.problemsTitle}</p>
+					<ul className="pb-2">
+						{problems.map((problem) => (
+							<li key={problem.id} className="flex min-h-11 items-center gap-3 px-4 py-1.5">
+								<CircleX aria-hidden="true" className="size-4 shrink-0 text-red-500" />
+								<span className="min-w-0 flex-1 text-sm text-pretty">{problem.message}</span>
+								{problem.fix && <ButtonFix fix={problem.fix} onEdit={fix} />}
+							</li>
+						))}
+					</ul>
+				</PopoverContent>
+			</Popover>
 		</div>
-	);
-}
-
-function TextProblem({ children }) {
-	return (
-		<span className="flex min-w-0 items-center gap-1.5 text-xs leading-snug text-muted-foreground">
-			<CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
-			<span className="line-clamp-2 text-pretty lg:max-w-48">{children}</span>
-		</span>
 	);
 }
 
@@ -558,30 +626,12 @@ function ButtonRow({ icon: Icon, title, description, onClick, isDisabled = false
 	);
 }
 
-function StatusSave({ isSaving, error, onRetry }) {
-	if (error) {
-		return (
-			<button
-				type="button"
-				onClick={onRetry}
-				title={error}
-				className="flex items-center gap-1.5 text-xs text-destructive hover:underline"
-			>
-				<CircleAlert className="size-3.5" />
-				Not saved, retry
-			</button>
-		);
-	}
+// Stays until a save goes through, unlike Saved.
+function ButtonRetrySave({ error, onRetry }) {
 	return (
-		<span aria-live="polite" className="flex min-w-16 items-center gap-1.5 text-xs text-muted-foreground lg:justify-end">
-			{isSaving ? (
-				"Saving…"
-			) : (
-				<>
-					<Check className="size-3.5" />
-					Saved
-				</>
-			)}
-		</span>
+		<button type="button" onClick={onRetry} title={error} className="flex items-center gap-1.5 text-xs text-destructive hover:underline">
+			<CircleAlert className="size-3.5" />
+			Not saved, retry
+		</button>
 	);
 }

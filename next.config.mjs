@@ -42,7 +42,18 @@ const nextConfig = {
 		],
 	},
 	async headers() {
-		return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+		return [
+			{ source: "/:path*", headers: SECURITY_HEADERS },
+			// Theme fonts load in emails and on newsletters' own hosts: browsers only take a font from another origin
+			// with CORS.
+			{
+				source: "/fonts/:path*",
+				headers: [
+					{ key: "Access-Control-Allow-Origin", value: "*" },
+					{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" },
+				],
+			},
+		];
 	},
 };
 
