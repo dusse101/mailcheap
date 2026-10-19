@@ -1,17 +1,13 @@
 "use server";
 
-import { headers } from "next/headers";
 import { keepContact } from "@/lib/contacts";
 import { connectDb } from "@/lib/db";
 import { verifyKeepToken } from "@/lib/last-chance";
 import { findNewsletterAnywhere } from "@/lib/public-newsletters";
-import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 
-// People click from home and office networks; a shared one still fits several readers.
-const PER_IP = { name: "keep-ip", limit: 20, window: "10 m" };
-
+// The page's button posts to /api/keep, which checks the origin and the rate limit, then calls this.
+// Opening the link never gets here, so a scanner that only fetches the URL changes nothing.
 export async function keepSending(token) {
-	if (await isRateLimited({ ...PER_IP, key: getClientIp(await headers()) })) return { error: "busy" };
 	const reference = verifyKeepToken(token);
 	if (!reference) return { error: "invalid" };
 
