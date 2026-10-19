@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { CONFIRM_URL_PLACEHOLDER, getConfirmationContent, getConfirmationProblem } from "../lib/confirmation-content.js";
+import { KEEP_BUTTON_LABEL } from "../lib/last-chance-content.js";
 import { getEmailBrand } from "../lib/public-brand.js";
 import { UNSUBSCRIBE_PLACEHOLDER, renderEmail } from "../lib/render-email.js";
 import { buildRecipientEmail } from "../lib/sending-rules.js";
@@ -139,8 +140,11 @@ test("confirmation and campaign footers say what the kind is, with an unsubscrib
 		assert.ok(welcome.html.includes("Past issues"));
 
 		const lastChance = renderEmail({ ...base, kind: "last-chance" });
-		assert.match(lastChance.html, /This is the last email unless you tap keep/);
-		assert.match(lastChance.text, /This is the last email unless you tap keep/);
+		const lastChanceEnding = `This is the last email unless you tap “${KEEP_BUTTON_LABEL}” above.`;
+		assert.ok(lastChance.html.includes(lastChanceEnding));
+		assert.ok(lastChance.text.includes(lastChanceEnding));
+		assert.equal(lastChance.html.includes("tap keep."), false);
+		assert.equal(lastChance.text.includes("tap keep."), false);
 		assert.equal(/every Thursday morning/.test(lastChance.html), false);
 		assert.equal(/every Thursday morning/.test(lastChance.text), false);
 		assert.equal(/One email, every/.test(lastChance.html), false);
