@@ -1,8 +1,11 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { FIRST_SEND, LIMITS, isCloud } from "@/lib/config";
+import { CLASSIFIER_CHECKS } from "@/lib/content-review-codes";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
+import { COMPARED_ISSUES, TIMELINE_HOURS } from "@/lib/report-stats";
 
 export const metadata = getHelpPageMetadata("sending");
 
@@ -17,7 +20,9 @@ export default function SendingPage() {
 				<li>a subject, and content;</li>
 				<li>the unsubscribe link, which MailCheap adds to every issue written in the editor;</li>
 				<li>a size under 100 KB, since Gmail cuts off longer emails;</li>
-				<li>a postal address, set in the newsletter&apos;s settings;</li>
+				<li>
+					a postal address, set in the <LinkApp href="/newsletters/sender">newsletter&apos;s settings</LinkApp>;
+				</li>
 				<li>a from address the newsletter is allowed to send from.</li>
 			</ul>
 			<p>
@@ -29,19 +34,14 @@ export default function SendingPage() {
 			<h2 id="who">Who gets it</h2>
 			<p>
 				By default, every active contact of the newsletter gets the issue, most engaged first: those who open and click the most get
-				it before the others. The Filter menu narrows it two ways:
+				it before the others. To send to only some of them, pick one of your segments in To, which shows how many contacts it reaches
+				out of all of them. New segment makes one without leaving the step, like your most engaged contacts.{" "}
+				<Link href={getHelpHref("contacts", "segments")}>Segments</Link>
 			</p>
-			<ul>
-				<li>
-					<strong>A segment</strong>, to send to the contacts it picks.{" "}
-					<Link href={getHelpHref("contacts", "segments")}>Segments</Link>
-				</li>
-				<li>
-					<strong>Most engaged contacts</strong>, to send to only how many you type, by opens and clicks. The rest can get it later,
-					from the campaign&apos;s page.
-				</li>
-			</ul>
-			<p>A draft whose segment was deleted waits until you pick another.</p>
+			<p>
+				A draft whose segment was deleted waits until you pick another.
+				{isCloud() && " A send can't go over what your plan has left this month: pick a smaller segment, or upgrade."}
+			</p>
 			<p>
 				The same step shows the issue&apos;s web page address, which you can change, and what the{" "}
 				<Link href={getHelpHref("list-cleanup")}>list cleanup</Link> will do at this send.
@@ -84,10 +84,31 @@ export default function SendingPage() {
 				<Link href={getHelpHref("deliverability", "pauses")}>Bounces, complaints and pauses</Link>
 			</p>
 
+			{isCloud() && (
+				<>
+					<h2 id="content-check">The content check</h2>
+					<p>
+						Before an issue goes out, an automated check reads its subject and content for phishing, malware, scams and explicit
+						content. It never reads your contacts. Almost every issue goes straight out.
+					</p>
+					<p>
+						When an issue looks clearly harmful, its send waits and its page says In review: a person at MailCheap looks at it,
+						usually within a few hours, then sends it as you wrote it or tells you why it can&apos;t go out.{" "}
+						<Link href="/acceptable-use">Acceptable use policy</Link>
+					</p>
+					<p>
+						The same happens when an issue&apos;s text speaks to the check itself, and to new content past{" "}
+						{formatNumber(CLASSIFIER_CHECKS.limit)} issues an hour from one account. An issue whose content was already checked
+						still goes straight out.
+					</p>
+				</>
+			)}
+
 			<h2 id="send-to-more">Sending to more</h2>
 			<p>
-				After a send to only part of your list, Send to more on the campaign&apos;s page sends it to the next most engaged contacts who
-				haven&apos;t got it yet. You pick how many, and each time starts a new step, so you can check the report in between.
+				A send capped at a number of contacts, which the API can set, goes to the most engaged first. Send to more on the
+				campaign&apos;s page then sends it to the next most engaged contacts who haven&apos;t got it yet. You pick how many, and each
+				time starts a new step, so you can check the report in between.
 			</p>
 
 			<h2 id="report">The report</h2>
@@ -95,7 +116,24 @@ export default function SendingPage() {
 				Each sent campaign&apos;s page shows how many emails were delivered, opened and clicked, and how many bounced, were marked as
 				spam or led to an unsubscribe, with results by inbox provider, like Gmail or Outlook. It counts the list cleanup&apos;s
 				last-chance emails apart. Opens are an estimate: some inboxes load every email&apos;s images on their own, which counts as an
-				open, and some readers block images.
+				open, and some readers block images. Preview, at the top, shows the email as it went out, in a mail app or in Gmail on a
+				phone.
+			</p>
+			<p>
+				Opened and clicked compare with the newsletter&apos;s last {COMPARED_ISSUES} issues, for example &ldquo;+4.2 pts vs
+				avg&rdquo;: all their opens or clicks over all the contacts they reached, so a small send barely counts. The comparison
+				shows once a send is {TIMELINE_HOURS / 24} days old, since its opens keep coming until then.
+			</p>
+			<p>
+				A chart shows the opens and clicks hour by hour for the first {TIMELINE_HOURS / 24} days after sending, in your timezone:
+				when most opens came, and how fast half of them did. Each contact counts once, at their first open and first click. The
+				opens after those {TIMELINE_HOURS / 24} days are counted under the chart.
+			</p>
+			<p>
+				Its links come next, most clicked first: how many contacts clicked each one, every click, and each link&apos;s share of the
+				contacts who clicked a link. A link counts once whatever its tracking parameters, like utm_source, and link scanners and the
+				unsubscribe link don&apos;t count. An issue sent before clicks were counted per link only has the clicks since then. The
+				API and AI assistants get the same numbers, the comparison and the hours included, in the campaign&apos;s report.
 			</p>
 		</ArticleHelp>
 	);

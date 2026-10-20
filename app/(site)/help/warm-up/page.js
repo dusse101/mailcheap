@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { FIRST_SEND, WARMUP } from "@/lib/config";
 import { formatCount, formatNumber } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
@@ -81,7 +82,9 @@ export default function WarmupPage() {
 
 			<h2 id="dashboard">Where you see it</h2>
 			<ul>
-				<li>The overview shows your day in the warm-up and how many emails go out at once right now.</li>
+				<li>
+					The <LinkApp href="/">overview</LinkApp> shows your day in the warm-up and how many emails go out at once right now.
+				</li>
 				<li>
 					The send step says when an issue will be spread, and over how many hours. A send at full speed only shows your day in the
 					warm-up.

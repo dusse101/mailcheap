@@ -119,30 +119,49 @@ function CardTheme({ preset, values, newsletter, isApplied, isApplying, stagger,
 			>
 				<PreviewThemeCard theme={resolved} newsletter={newsletter} />
 			</button>
-			<div className="flex h-12 items-center justify-between gap-3 border-t border-border/60 pr-2 pl-4">
+			<div className={cn("flex h-12 items-center justify-between gap-3 border-t border-border/60 pl-4", isApplied ? "pr-2" : "pr-4")}>
 				<span className="flex min-w-0 items-center gap-2 text-sm font-medium">
 					<span className="truncate">{preset.name}</span>
 					{isApplying ? (
 						<Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Applying" />
 					) : (
 						isApplied && (
-							<span className="grid size-4.5 place-items-center rounded-full bg-foreground text-background">
+							<span className="grid size-4.5 shrink-0 place-items-center rounded-full bg-foreground text-background">
 								<Check className="size-3 animate-icon-in" strokeWidth={3} aria-label="Applied" />
 							</span>
 						)
 					)}
-					{isApplied && resolved.isCustomized && <span className="text-xs font-normal text-muted-foreground">Customized</span>}
+					{isApplied && resolved.isCustomized && <span className="truncate text-xs font-normal text-muted-foreground">Customized</span>}
 				</span>
-				{isApplied ? (
-					<Button type="button" variant="ghost" size="sm" onClick={onCustomize}>
-						<SlidersHorizontal />
-						Customize
-					</Button>
-				) : (
-					<span className="pr-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/card:opacity-100">Use</span>
-				)}
+				<span className="flex shrink-0 items-center gap-3">
+					<ListPalette colors={resolved.isAdaptive ? ADAPTIVE_COLORS : resolved.colors} />
+					{isApplied && (
+						<Button type="button" size="sm" onClick={onCustomize}>
+							<SlidersHorizontal />
+							Customize
+						</Button>
+					)}
+				</span>
 			</div>
 		</li>
+	);
+}
+
+// The theme's page, text and accent, at a glance. Hovering the card spreads them apart a little.
+function ListPalette({ colors }) {
+	return (
+		<span aria-hidden="true" className="flex items-center px-1">
+			{PALETTE.map(({ key, spread }) => (
+				<span
+					key={key}
+					style={{ backgroundColor: colors[key] }}
+					className={cn(
+						"size-3.5 rounded-full shadow-[0_0_0_2px_var(--card),inset_0_0_0_1px_rgb(0_0_0/0.12)] transition-[translate] duration-200 ease-out not-first:-ml-1 dark:shadow-[0_0_0_2px_var(--card),inset_0_0_0_1px_rgb(255_255_255/0.16)]",
+						spread
+					)}
+				/>
+			))}
+		</span>
 	);
 }
 
@@ -160,10 +179,11 @@ function PanelCustomize({ newsletter, postalAddress, draft, onChange, onBack }) 
 		[deferredDraft, newsletter.name, postalAddress]
 	);
 
+	// From lg, both panels take the screen's height below the page's title, the controls scrolling in theirs.
 	return (
-		<div className="grid gap-5 animate-enter lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
-			<div className="rounded-xl bg-card shadow-border lg:sticky lg:top-24">
-				<div className="flex h-12 items-center justify-between gap-2 border-b border-border/60 pr-2 pl-1.5">
+		<div className="grid gap-5 animate-enter lg:h-[max(34rem,calc(100dvh-var(--plan-bar-height)-11.75rem))] lg:grid-cols-[20rem_minmax(0,1fr)]">
+			<div className="flex flex-col rounded-xl bg-card shadow-border lg:min-h-0">
+				<div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 pr-2 pl-1.5">
 					<button
 						type="button"
 						onClick={onBack}
@@ -179,12 +199,12 @@ function PanelCustomize({ newsletter, postalAddress, draft, onChange, onBack }) 
 						</Button>
 					)}
 				</div>
-				<div className="p-4">
+				<div className="p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:thin]">
 					<FieldsTheme values={draft} onChange={onChange} />
 				</div>
 			</div>
-			<div className="order-first flex flex-col gap-3 lg:sticky lg:top-24 lg:order-none">
-				<div role="tablist" aria-label="Preview" className="flex w-fit gap-1 rounded-xl bg-muted p-1">
+			<div className="order-first flex flex-col gap-3 lg:order-none lg:min-h-0">
+				<div role="tablist" aria-label="Preview" className="flex w-fit shrink-0 gap-1 rounded-xl bg-muted p-1">
 					{VIEWS.map(({ id, label, icon: Icon }) => (
 						<button
 							key={id}
@@ -203,7 +223,7 @@ function PanelCustomize({ newsletter, postalAddress, draft, onChange, onBack }) 
 					))}
 				</div>
 				{view === "website" ? (
-					<div className="h-[min(68dvh,44rem)] overflow-y-auto overscroll-contain rounded-xl shadow-border">
+					<div className="h-[min(62svh,40rem)] overflow-y-auto overscroll-contain rounded-xl shadow-border lg:h-auto lg:min-h-0 lg:flex-1">
 						<PreviewThemeSite theme={resolved} newsletter={newsletter} />
 					</div>
 				) : (
@@ -211,7 +231,7 @@ function PanelCustomize({ newsletter, postalAddress, draft, onChange, onBack }) 
 						html={emailHtml}
 						sender={{ name: newsletter.name, fromName: newsletter.fromName, fromEmail: newsletter.fromEmail, imageUrl: newsletter.imageUrl }}
 						subject="This week"
-						className="h-[min(68dvh,44rem)]"
+						className="lg:min-h-0 lg:flex-1"
 					/>
 				)}
 			</div>
@@ -236,6 +256,14 @@ function getPresetName(id) {
 const VIEWS = [
 	{ id: "website", label: "Website", icon: Monitor },
 	{ id: "email", label: "Email", icon: Mail },
+];
+// MailCheap's own colors follow the dashboard's light or dark mode, like its preview.
+const ADAPTIVE_COLORS = { background: "var(--background)", text: "var(--foreground)", accent: "var(--primary)" };
+// Without reduced motion, the outer dots move out past their overlap.
+const PALETTE = [
+	{ key: "background", spread: "motion-safe:group-hover/card:-translate-x-1.5" },
+	{ key: "text", spread: "" },
+	{ key: "accent", spread: "motion-safe:group-hover/card:translate-x-1.5" },
 ];
 
 const SAMPLE_EMAIL = `# Notes from the road

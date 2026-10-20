@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { MAX_ACTIVE_API_KEYS } from "@/lib/actions/api-keys";
 import { isCloud } from "@/lib/config";
 import { getHelpPageMetadata } from "@/lib/help";
@@ -12,7 +13,8 @@ export default function ApiAndAiPage() {
 			<h2 id="same-actions">The same actions, from anywhere</h2>
 			<p>
 				Everything you do in the dashboard also works from code, through the REST API, and from AI assistants, through the MCP server:
-				writing drafts, sending tests, scheduling, adding contacts, building segments, reading reports. Each action runs the same checks
+				writing drafts, sending tests, scheduling, adding contacts with their first name, tags and fields, tagging them, building
+				segments, reading reports. Each action runs the same checks
 				and limits as in the dashboard.{isCloud() && " Both need a plan."} The <Link href="/docs">API and MCP docs</Link> have the setup
 				and every endpoint.
 			</p>
@@ -25,12 +27,16 @@ export default function ApiAndAiPage() {
 				changes only on its Business, Enterprise and Edu plans. <Link href="/docs/mcp">See the setup for each assistant</Link>.
 			</p>
 			<p>
-				Apps connected with your sign-in are listed on the API keys page, with when they last did something. Each one has full access,
+				Apps connected with your sign-in are listed on the <LinkApp href="/api-keys">API keys page</LinkApp>, with when they last did
+				something. Each one has full access,
 				like a full access key, until you disconnect it.
 			</p>
 
 			<h2 id="api-keys">API keys</h2>
-			<p>Create keys on the API keys page. A key is shown once: copy it then, since MailCheap only keeps a fingerprint of it.</p>
+			<p>
+				Create keys on the <LinkApp href="/api-keys">API keys page</LinkApp>. A key is shown once: copy it then, since MailCheap only
+				keeps a fingerprint of it.
+			</p>
 			<ul>
 				<li>
 					<strong>Full access</strong>: everything the dashboard does, for your scripts and AI assistants.

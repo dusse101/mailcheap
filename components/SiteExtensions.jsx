@@ -3,10 +3,11 @@
 // SiteAnalytics also counts the steps shared markup names with data-goal attributes. SupportChat, the chat on signed-in
 // dashboard pages, opens in place from links to siteExtensions.supportChatPath and renders [data-support-chat]. WhatsNew,
 // on dashboard pages too, gets the account and shows what shipped since its owner last looked. ArticleUpsell ends the
-// help center's and the docs' pages.
+// help center's and the docs' pages; ArticleDemo gets a help article's slug and opens it with the feature's picture.
 export const SiteAnalytics = null;
 export const SiteBand = null;
 export const ArticleUpsell = null;
+export const ArticleDemo = null;
 export const SigninAside = null;
 export const FooterCredit = null;
 export const FooterNote = null;

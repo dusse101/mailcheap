@@ -1,13 +1,15 @@
 import { isValidObjectId } from "mongoose";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import CampaignReport from "@/components/CampaignReport";
 import FormCampaign from "@/components/FormCampaign";
 import { scoped } from "@/lib/account-scope";
 import { getAccountSendProblem, hasActiveSubscription, isBlocked } from "@/lib/account-state";
 import { getArchiveUrls } from "@/lib/archive-hosts";
+import { findCampaignLinks } from "@/lib/campaign-links";
+import { getCampaignActivity, getCampaignComparison } from "@/lib/campaign-report";
 import { countNewContacts, countRemainingContacts, getSendVolumes, sendTimesPipeline } from "@/lib/campaign-queries";
 import { isSendingEnabled } from "@/lib/config";
-import { MESSAGE_STATS_GROUP } from "@/lib/message-stats";
 import { getPostalAddress } from "@/lib/postal-address";
 import { countAudience, countSegmentCards, findCampaignSegmentFilter, listLiveSegments } from "@/lib/segment-queries";
 import { compileSegment, describeSegment } from "@/lib/segments";
@@ -16,9 +18,9 @@ import { getPace } from "@/lib/send-spread";
 import { serialize } from "@/lib/serialize";
 import { loadSender } from "@/lib/sender";
 import { siteExtensions } from "@/lib/site-extensions";
+import { TIME_ZONE_COOKIE, resolveTimeZone } from "@/lib/time-zone";
 import { countEmailsInFlight, getUsage } from "@/lib/usage";
 import Campaign from "@/models/Campaign";
-import Message from "@/models/Message";
 import Newsletter from "@/models/Newsletter";
 
 export const metadata = { title: "Campaign" };
@@ -38,9 +40,12 @@ export default async function CampaignPage({ params }) {
 	const plan = await getPlanState(account);
 
 	if (!["draft", "scheduled"].includes(campaign.status)) {
-		const [providers, remainingCount] = await Promise.all([
-			getProviderBreakdown(campaign),
+		const [{ providers, timeline }, comparison, remainingCount, links, cookieStore] = await Promise.all([
+			getCampaignActivity(campaign),
+			getCampaignComparison(campaign),
 			countRemainingContacts(campaign),
+			findCampaignLinks(campaign),
+			cookies(),
 		]);
 		// Only a next step needs them, for what its dialog says.
 		const [volumes, newContacts] =
@@ -55,6 +60,10 @@ export default async function CampaignPage({ params }) {
 				campaign={serialize(campaign)}
 				newsletter={serialize(newsletter)}
 				providers={providers}
+				links={serialize(links)}
+				timeline={timeline}
+				comparison={comparison}
+				timeZone={resolveTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value)}
 				remainingCount={remainingCount}
 				emailsLeft={plan.emailsLeft}
 				isBlocked={isBlocked(account)}
@@ -85,7 +94,7 @@ export default async function CampaignPage({ params }) {
 			segments={segments.map(({ _id, name, match, conditions }) => ({
 				id: String(_id),
 				name,
-				description: describeSegment({ match, conditions }),
+				description: describeSegment({ match, conditions }, account.contactFields ?? []),
 			}))}
 			isSegmentDeleted={isSegmentDeleted}
 			senderProblem={sender.problem ?? null}
@@ -130,13 +139,4 @@ async function getSendTimes(campaign) {
 		history: rows.map(({ at }) => at.toISOString()),
 		taken: own.filter(({ status }) => status === "scheduled").map(({ at }) => at.toISOString()),
 	};
-}
-
-async function getProviderBreakdown(campaign) {
-	const rows = await Message.aggregate([
-		{ $match: { accountId: campaign.accountId, campaignId: campaign._id, kind: "campaign" } },
-		{ $group: { _id: { $ifNull: ["$provider", "other"] }, ...MESSAGE_STATS_GROUP } },
-		{ $sort: { sent: -1 } },
-	]);
-	return rows.filter(({ sent }) => sent > 0).map(({ _id, ...row }) => ({ provider: _id, ...row }));
 }

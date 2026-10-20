@@ -63,6 +63,7 @@ export default function CardAddContacts({ newsletter, curl }) {
 						<Link
 							href="/docs/api#add-contact"
 							target="_blank"
+							rel="noopener noreferrer"
 							className="relative inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors duration-150 after:absolute after:-inset-x-2 after:-inset-y-2 hover:text-foreground"
 						>
 							API docs

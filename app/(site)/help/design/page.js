@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { getEmailBrand } from "@/lib/public-brand";
 import { THEME_FONTS } from "@/lib/theme-fonts";
@@ -16,8 +17,8 @@ export default function DesignPage() {
 			<h2 id="themes">Themes</h2>
 			<p>
 				A theme is your newsletter&apos;s look: its fonts, colors, corners, shadows and spacing, on your website and in your emails.
-				Pick one in Settings, then Design: each theme shows your website and one of your emails in it, and a click applies it. A
-				message lets you undo it.
+				Pick one in <LinkApp href="/newsletters/design">Settings, then Design</LinkApp>: each theme shows your website and one of
+				your emails in it, and a click applies it. A message lets you undo it.
 			</p>
 			<p>
 				There are {THEME_PRESETS.length}: {mailcheap.name}, the black and white look newsletters start with, then{" "}

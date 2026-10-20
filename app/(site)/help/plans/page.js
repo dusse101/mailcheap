@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { TRIAL_CONTACTS } from "@/lib/actions/contacts";
 import { formatNumber, formatUsd } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
@@ -44,8 +45,8 @@ export default function PlansPage() {
 			<h2 id="emails">What counts as an email</h2>
 			<p>
 				Every email MailCheap sends for you: issues, last-chance emails, test emails, and welcome and confirmation emails. An issue
-				sent to 1,000 subscribers is 1,000 emails. The count starts over every month, on the day your plan started. The billing page
-				and the overview show how many you&apos;ve used.
+				sent to 1,000 subscribers is 1,000 emails. The count starts over every month, on the day your plan started. The{" "}
+				<LinkApp href="/billing">billing page</LinkApp> and the <LinkApp href="/">overview</LinkApp> show how many you&apos;ve used.
 			</p>
 
 			<h2 id="subscribers">What counts as a subscriber</h2>
@@ -73,7 +74,8 @@ export default function PlansPage() {
 
 			<h2 id="change">Changing or canceling</h2>
 			<p>
-				Change your plan from the billing page, anytime: Stripe shows what you&apos;ll pay before you confirm, in US dollars. The same
+				Change your plan from the <LinkApp href="/billing">billing page</LinkApp>, anytime: Stripe shows what you&apos;ll pay before
+				you confirm, in US dollars. The same
 				page opens Stripe&apos;s portal for your card, invoices and cancellation.
 			</p>
 			<p>

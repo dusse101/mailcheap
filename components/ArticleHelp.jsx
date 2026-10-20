@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArticleDemo } from "@/components/SiteExtensions";
+import { isCloud } from "@/lib/config";
 import { HELP_PATH, getHelpArticle, getHelpArticles, getHelpHref } from "@/lib/help";
 import { siteExtensions } from "@/lib/site-extensions";
 import { cn } from "@/lib/utils";
 
-// An article of the help center (lib/help.js): its group, title and summary, its sections, then the articles around it.
-// One this server doesn't have (cloud only) answers 404. Sections are h2s with an id, for links to them.
+// An article of the help center (lib/help.js): its group, title and summary, on MailCheap Cloud the picture of its feature,
+// its sections, then the articles around it. One this server doesn't have (cloud only) answers 404. Sections are h2s
+// with an id, for links to them.
 export default function ArticleHelp({ slug, children }) {
 	const article = getHelpArticle(slug);
 	if (!article) notFound();
@@ -31,6 +34,8 @@ export default function ArticleHelp({ slug, children }) {
 				<h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{article.title}</h1>
 				<p className="mt-4 text-[17px] leading-8 text-pretty text-muted-foreground">{article.summary}</p>
 			</header>
+
+			{isCloud() && ArticleDemo && <ArticleDemo slug={slug} />}
 
 			<div style={{ "--stagger": 1 }} className={cn(PROSE, "animate-enter")}>
 				{children}

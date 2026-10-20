@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { TRIAL_CONTACTS } from "@/lib/actions/contacts";
 import { isGoogleEnabled } from "@/lib/auth";
 import { WARMUP, getSharedDomain, isCloud } from "@/lib/config";
@@ -46,21 +47,27 @@ export default function GettingStartedPage() {
 			)}
 
 			<h2 id="first-issue">Send your first issue</h2>
-			<p>The overview page lists these steps until they&apos;re done.</p>
+			<p>
+				The <LinkApp href="/">overview page</LinkApp> lists these steps until they&apos;re done.
+			</p>
 			<ol>
 				<li>
-					<strong>Write your first issue.</strong> Start a draft from the Campaigns page. It saves as you type.{" "}
-					<Link href={getHelpHref("writing")}>Writing an issue</Link>
+					<strong>Write your first issue.</strong> Start a draft from the <LinkApp href="/campaigns">Campaigns page</LinkApp>. It
+					saves as you type. <Link href={getHelpHref("writing")}>Writing an issue</Link>
 				</li>
 				<li>
 					<strong>Add your subscribers.</strong> Import a CSV file from the platform you&apos;re leaving, or add people one by one on
-					the Contacts page. <Link href={getHelpHref("importing-contacts")}>Importing contacts</Link>
+					the <LinkApp href="/contacts">Contacts page</LinkApp>. <Link href={getHelpHref("importing-contacts")}>Importing contacts</Link>
 				</li>
 				<li>
 					<strong>Send from your domain{sharedDomain ? ", if you want to" : ""}.</strong>{" "}
-					{sharedDomain
-						? `Until then, each newsletter sends from its shared address, like hello@your-newsletter.${sharedDomain}.`
-						: "Add its DNS records on the Domains page, then send from an address at it."}{" "}
+					{sharedDomain ? (
+						`Until then, each newsletter sends from its shared address, like hello@your-newsletter.${sharedDomain}.`
+					) : (
+						<>
+							Add its DNS records on the <LinkApp href="/domains">Domains page</LinkApp>, then send from an address at it.
+						</>
+					)}{" "}
 					<Link href={getHelpHref("sender-addresses")}>Sender addresses and domains</Link>
 				</li>
 				<li>

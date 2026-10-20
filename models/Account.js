@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
+import { FIELD_TYPE_IDS } from "../lib/contact-fields.js";
 import { INTERVALS, PLAN_IDS } from "../lib/plans.js";
+import { SUMMARY_FREQUENCIES } from "../lib/summary.js";
 
 export const ACCOUNT_STATUSES = ["active", "paused"];
 export const BLOCK_SOURCES = ["admin", "rates", "campaign", "slice", "trap", "ses", "postshiba", "gmail"];
@@ -97,6 +99,28 @@ const accountSchema = new mongoose.Schema(
 		// site extension (components/SiteExtensions.jsx) only lists the others.
 		changelog: {
 			seen: { type: [String], default: undefined },
+		},
+		// The summary email (lib/summary.js): its owner's choice (unset: weekly), the timezone it goes out in, saved from
+		// their browser by the dashboard, and the last one claimed, which a second delivery of its job doesn't send again.
+		summary: {
+			frequency: { type: String, enum: SUMMARY_FREQUENCIES },
+			timeZone: { type: String },
+			lastSentKey: { type: String },
+			lastSentAt: { type: Date },
+		},
+		// The fields its contacts can hold besides a first name and tags, shared by its newsletters (lib/contact-fields.js).
+		// Each contact keeps its values under fields.<key>; deleting a field here leaves them on the contacts.
+		contactFields: {
+			type: [
+				{
+					_id: false,
+					key: { type: String, required: true },
+					label: { type: String, required: true, trim: true },
+					type: { type: String, enum: FIELD_TYPE_IDS, required: true },
+					createdAt: { type: Date },
+				},
+			],
+			default: undefined,
 		},
 		// Set by an admin; they replace the plan's numbers.
 		limitOverrides: {

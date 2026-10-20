@@ -122,6 +122,7 @@ function CardAgents({ agents }) {
 				<Link
 					href="/docs/api"
 					target="_blank"
+					rel="noopener noreferrer"
 					className="relative -my-1 inline-flex items-center gap-1 py-1 text-sm text-muted-foreground transition-colors duration-150 after:absolute after:-inset-x-2 after:-inset-y-2 hover:text-foreground"
 				>
 					API reference
@@ -134,6 +135,7 @@ function CardAgents({ agents }) {
 						<Link
 							href={href}
 							target="_blank"
+							rel="noopener noreferrer"
 							className="group flex flex-col gap-3 rounded-2xl p-2.5 shadow-border transition-[box-shadow,background-color,scale] duration-150 ease-out hover:bg-muted/40 hover:shadow-border-hover active:scale-[0.96]"
 						>
 							<span className="flex items-start justify-between">

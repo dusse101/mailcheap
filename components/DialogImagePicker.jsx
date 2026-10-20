@@ -3,13 +3,14 @@
 import { Suspense, use, useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import { Check, ImageUp, Images, Loader2 } from "lucide-react";
+import ZoneUpload from "@/components/ZoneUpload";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/format";
 import { toast } from "@/lib/toast";
-import { IMAGE_TYPES, fetchImages, loadImageLibrary, readImageSize, uploadImageFile } from "@/lib/upload-image";
-import { useImageDrop } from "@/lib/use-image-drop";
+import { IMAGE_TYPES, IMAGE_TYPE_ERROR, fetchImages, loadImageLibrary, readImageSize, uploadImageFile } from "@/lib/upload-image";
+import { useFileDrop } from "@/lib/use-file-drop";
 import { cn } from "@/lib/utils";
 
 // Transparent images sit on a light checkerboard in both themes: emails are white, so a dark logo has to show.
@@ -24,7 +25,7 @@ export default function DialogImagePicker({ open, onOpenChange, onSelect, curren
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+			<DialogContent className="gap-0 p-0 sm:max-w-xl">
 				<PickerImage currentUrl={currentUrl} onSelect={select} />
 			</DialogContent>
 		</Dialog>
@@ -35,7 +36,11 @@ export default function DialogImagePicker({ open, onOpenChange, onSelect, curren
 function PickerImage({ currentUrl, onSelect }) {
 	const [library] = useState(loadImageLibrary);
 	const [upload, setUpload] = useState(null);
-	const { isDragging, dropProps } = useImageDrop(uploadFile);
+	const { isDragging, dropProps } = useFileDrop({
+		accept: IMAGE_TYPES,
+		onFile: uploadFile,
+		onReject: () => toast.error(IMAGE_TYPE_ERROR),
+	});
 
 	useEffect(() => () => upload?.previewUrl && URL.revokeObjectURL(upload.previewUrl), [upload]);
 
@@ -64,58 +69,31 @@ function PickerImage({ currentUrl, onSelect }) {
 				<DialogDescription>Upload one, or use an image you uploaded before.</DialogDescription>
 			</DialogHeader>
 			<div className="px-4">
-				<ZoneUpload upload={upload} isDragging={isDragging} onFile={uploadFile} />
+				<ZoneUpload
+					icon={ImageUp}
+					title="Drop an image here or click to upload"
+					hint="PNG, JPEG, GIF or WebP under 4 MB. Pasting works too."
+					accept={IMAGE_TYPES}
+					isDragging={isDragging}
+					isBusy={Boolean(upload)}
+					onFile={uploadFile}
+					className="h-36"
+				>
+					{upload && (
+						<>
+							{upload.previewUrl && (
+								<Image src={upload.previewUrl} alt="" fill unoptimized sizes="544px" className="object-contain p-3 opacity-30" />
+							)}
+							<Loader2 className="relative size-5 animate-spin" />
+							<span className="relative text-sm font-medium">Uploading…</span>
+						</>
+					)}
+				</ZoneUpload>
 			</div>
 			<Suspense fallback={<SkeletonLibrary />}>
 				<GridLibrary request={library} currentUrl={currentUrl} isDisabled={Boolean(upload)} onSelect={onSelect} />
 			</Suspense>
 		</div>
-	);
-}
-
-function ZoneUpload({ upload, isDragging, onFile }) {
-	return (
-		<label
-			className={cn(
-				"group relative flex h-36 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-xl border border-dashed border-foreground/15 bg-muted/40 px-4 text-center transition-[background-color,border-color,box-shadow] duration-150 hover:border-foreground/30 hover:bg-muted/70 has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
-				isDragging && "border-solid border-foreground/40 bg-muted ring-4 ring-foreground/5",
-				upload && "pointer-events-none"
-			)}
-		>
-			{upload ? (
-				<>
-					{upload.previewUrl && (
-						<Image src={upload.previewUrl} alt="" fill unoptimized sizes="544px" className="object-contain p-3 opacity-30" />
-					)}
-					<Loader2 className="relative size-5 animate-spin" />
-					<span className="relative text-sm font-medium">Uploading…</span>
-				</>
-			) : (
-				<>
-					<span
-						className={cn(
-							"grid size-10 place-items-center rounded-full bg-background shadow-border transition-transform duration-200 ease-out group-hover:-translate-y-0.5",
-							isDragging && "-translate-y-1 scale-110"
-						)}
-					>
-						<ImageUp className="size-4.5" />
-					</span>
-					<span className="text-sm font-medium">{isDragging ? "Drop to upload" : "Drop an image here or click to upload"}</span>
-					<span className="text-xs text-pretty text-muted-foreground">PNG, JPEG, GIF or WebP under 4 MB. Pasting works too.</span>
-				</>
-			)}
-			<input
-				type="file"
-				accept={IMAGE_TYPES.join(",")}
-				disabled={Boolean(upload)}
-				className="sr-only"
-				onChange={(event) => {
-					const [file] = event.target.files;
-					event.target.value = "";
-					if (file) onFile(file);
-				}}
-			/>
-		</label>
 	);
 }
 

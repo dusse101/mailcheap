@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, LAST_CHANCE_DAYS, getCleanupDefaults } from "@/lib/cleanup";
 import { isCloud } from "@/lib/config";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
@@ -37,8 +38,8 @@ export default function ListCleanupPage() {
 				</li>
 			</ol>
 			<p>
-				Dormant contacts stay in your list: they&apos;re never unsubscribed or deleted, and you can mark any of them active from the
-				Contacts page.{isCloud() && " They don't count toward your plan's subscribers."}
+				Dormant contacts stay in your list: they&apos;re never unsubscribed or deleted, and you can mark any of them active from the{" "}
+				<LinkApp href="/contacts">Contacts page</LinkApp>.{isCloud() && " They don't count toward your plan's subscribers."}
 			</p>
 
 			<h2 id="before-sending">Before you send</h2>
@@ -50,7 +51,7 @@ export default function ListCleanupPage() {
 
 			<h2 id="settings">Settings</h2>
 			<p>
-				List cleanup is on for new newsletters. In the List cleanup section of the{" "}
+				List cleanup is on for new newsletters. In the <LinkApp href="/newsletters/cleanup">List cleanup section</LinkApp> of the{" "}
 				<Link href={getHelpHref("newsletters", "list-cleanup")}>newsletter&apos;s settings</Link>, turn it off, or change when a contact
 				counts as cold: {CLEANUP_LIMITS.minIssues} to {CLEANUP_LIMITS.maxIssues} ignored issues, counting from the first issue MailCheap
 				sent them, and {CLEANUP_LIMITS.minDays} to {CLEANUP_LIMITS.maxDays} quiet days. A weekly newsletter can go lower on days.

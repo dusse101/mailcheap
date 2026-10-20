@@ -194,6 +194,7 @@ const STEPS = {
 				<Link
 					href="/docs/api#add-contact"
 					target="_blank"
+					rel="noopener noreferrer"
 					className="font-medium text-foreground underline decoration-foreground/30 underline-offset-2 transition-colors duration-150 hover:decoration-foreground"
 				>
 					API

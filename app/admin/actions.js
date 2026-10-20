@@ -4,11 +4,14 @@ import { isValidObjectId } from "mongoose";
 import { revalidatePath } from "next/cache";
 import { blockAccount, unblockAccount } from "@/lib/account-blocks";
 import { setLimitOverrides, setSendSpread } from "@/lib/accounts";
+import { dismissAlertType, dismissAttention, getAttentionDetails } from "@/lib/admin-alerts";
 import { requireAdmin } from "@/lib/auth";
 import { grantFreePlan, revokeFreePlan } from "@/lib/billing";
 import { isCloud } from "@/lib/config";
+import { approveReview, rejectReview } from "@/lib/content-review-decisions";
 import { getGlobalSuppression, removeGlobalSuppression } from "@/lib/global-suppressions";
 import { getPlan } from "@/lib/plans";
+import { serialize } from "@/lib/serialize";
 import { normalizeEmail } from "@/lib/validation";
 
 const MAX_REASON_LENGTH = 200;
@@ -31,6 +34,33 @@ function readEndDate(value) {
 	return DATE_PATTERN.test(text) ? new Date(`${text}T00:00:00Z`) : new Date(Number.NaN);
 }
 
+// An item of "Needs a look" (kind: alert, account or campaign) for its dialog: what happened, who was told, and
+// what happened around it.
+export async function loadAttention(kind, id) {
+	await requireAdmin();
+	const details = await getAttentionDetails({ kind: String(kind), id: String(id) });
+	return details ? { details: serialize(details) } : { error: "Not found" };
+}
+
+// It leaves "Needs a look" until it happens again.
+export async function dismissAttentionAction(kind, id) {
+	const admin = await requireAdmin();
+	if (!(await dismissAttention({ kind: String(kind), id: String(id), by: admin.email }))) return { error: "Not found" };
+	console.info(`[admin] ${admin.email} dismissed ${kind} ${id}`);
+	revalidatePath("/admin");
+	return { ok: true };
+}
+
+// The alert and every other one of its kind still showing.
+export async function dismissAlertTypeAction(id) {
+	const admin = await requireAdmin();
+	const count = await dismissAlertType({ id: String(id), by: admin.email });
+	if (count === null) return { error: "Not found" };
+	console.info(`[admin] ${admin.email} dismissed ${count} alerts like ${id}`);
+	revalidatePath("/admin");
+	return { ok: true, count };
+}
+
 // reason: what the account's owner reads on their dashboard.
 export async function blockAccountAction(accountId, reason) {
 	const admin = await requireAdmin();
@@ -40,6 +70,26 @@ export async function blockAccountAction(accountId, reason) {
 	console.info(`[admin] ${admin.email} blocked account ${accountId}`);
 	revalidatePath("/admin");
 	return isBlocked ? { ok: true } : { error: "Already blocked" };
+}
+
+// An issue the content check held (lib/content-review.js): approving sends it now, as its owner sent it.
+export async function approveContentReview(campaignId) {
+	const admin = await requireAdmin();
+	if (!isValidObjectId(campaignId)) return { error: "Campaign not found" };
+	const result = await approveReview({ campaignId: String(campaignId), admin });
+	revalidatePath("/admin");
+	revalidatePath(`/admin/campaigns/${campaignId}`);
+	return result;
+}
+
+// note: what its owner reads. block: the account too, as blocking it from the admin page does.
+export async function rejectContentReview(campaignId, { note, block } = {}) {
+	const admin = await requireAdmin();
+	if (!isValidObjectId(campaignId)) return { error: "Campaign not found" };
+	const result = await rejectReview({ campaignId: String(campaignId), admin, note: typeof note === "string" ? note : "", block: block === true });
+	revalidatePath("/admin");
+	revalidatePath(`/admin/campaigns/${campaignId}`);
+	return result;
 }
 
 // The only way a block ends. Its campaigns stay paused until their owner resumes them.
