@@ -61,6 +61,14 @@ export async function createNewsletter(_state, formData) {
 	redirect("/newsletters");
 }
 
+// Form for your site (FormEmbed): its switch, text, layout and sites, all sent each time.
+export async function saveSignupForm(newsletterId, signupForm) {
+	const { output, failure } = await runDashboardAction("update_newsletter", { id: String(newsletterId ?? ""), signupForm });
+	if (failure) return toFormError(failure);
+	revalidatePath(SETTINGS_PATH, "layout");
+	return { ok: true, signupForm: output.signupForm };
+}
+
 // Design (FormTheme): a preset alone applies it as it comes; the customizer sends a theme's full values.
 export async function saveTheme(newsletterId, theme) {
 	const { output, failure } = await runDashboardAction("update_newsletter", { id: String(newsletterId ?? ""), theme });

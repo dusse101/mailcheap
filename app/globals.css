@@ -646,6 +646,14 @@ html:has([data-support-chat]) {
   & [data-resize-container] img {
     margin: 0;
   }
+  /* {{first_name}}, filled in per reader (lib/editor-merge-tags.js). */
+  & .merge-tag {
+    border-radius: 0.375rem;
+    padding: 0.1em 0.3em;
+    background-color: color-mix(in oklab, var(--foreground) 7%, transparent);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
   & img[src^="blob:"] {
     opacity: 0.5;
   }

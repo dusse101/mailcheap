@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 
@@ -22,8 +23,8 @@ export default function SenderAddressesPage() {
 					</p>
 					<p>
 						The address follows your newsletter&apos;s slug, so changing the slug changes it. Replies go to your account&apos;s email,
-						or to the reply-to address you set in the newsletter&apos;s settings. You can keep it as long as you like: the Domains page
-						shows it as used until you switch.
+						or to the reply-to address you set in the <LinkApp href="/newsletters/sender">newsletter&apos;s settings</LinkApp>. You can
+						keep it as long as you like: the <LinkApp href="/domains">Domains page</LinkApp> shows it as used until you switch.
 					</p>
 				</>
 			)}
@@ -31,8 +32,8 @@ export default function SenderAddressesPage() {
 			<h2 id="own-domain">Your own domain</h2>
 			<p>
 				Sending from an address at your own domain{sharedDomain ? " is optional. It" : ""} puts your domain in the From address and
-				builds its own reputation with inboxes. On the Domains page, under Add your domain, type the domain and the
-				address&apos;s name before the @
+				builds its own reputation with inboxes. On the <LinkApp href="/domains">Domains page</LinkApp>, under Add your domain, type
+				the domain and the address&apos;s name before the @
 				{hasWebsiteStep && ", plus a subdomain for your website and links, like news for news.yourdomain.com"}.
 				{isCloud() && " Adding a domain needs a plan."}
 			</p>
@@ -62,7 +63,8 @@ export default function SenderAddressesPage() {
 
 			<h2 id="switch">Switching to your domain</h2>
 			<p>
-				Once the domain is verified, its card on the Domains page lets you send the open newsletter from an address at it. Your next
+				Once the domain is verified, its card on the <LinkApp href="/domains">Domains page</LinkApp> lets you send the open
+				newsletter from an address at it. Your next
 				emails go out from that address{hasWebsiteStep && ", and your website and links move to your subdomain once its record is found"}
 				.
 			</p>

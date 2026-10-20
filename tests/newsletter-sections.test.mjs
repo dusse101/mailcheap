@@ -62,9 +62,23 @@ test("a section's page sends its own fields only, so saving it leaves the other 
 		author: { bio: "I write.", imageUrl: "https://cdn.example.com/jane.png" },
 		socialLinks: ["https://x.com/jane", "https://youtube.com/@jane"],
 	});
+	// Double opt-in and the welcome email, on here, also turn the other off.
+	const linked = { signups: ["welcome"], welcome: ["requireConfirmation"] };
 	for (const { id } of SETTINGS_SECTIONS) {
-		assert.deepEqual(Object.keys(readSettingsForm(fullForm(id))).sort(), [...SECTION_FIELDS[id]].sort(), id);
+		assert.deepEqual(Object.keys(readSettingsForm(fullForm(id))).sort(), [...SECTION_FIELDS[id], ...(linked[id] ?? [])].sort(), id);
 	}
+});
+
+test("double opt-in turned on turns the welcome email off in the same save, and the reverse", () => {
+	assert.deepEqual(readSettingsForm(fullForm("signups")).welcome, { enabled: false });
+	assert.equal(readSettingsForm(fullForm("welcome")).requireConfirmation, false);
+
+	const welcomeOff = fullForm("welcome");
+	welcomeOff.delete("welcomeEnabled");
+	assert.equal("requireConfirmation" in readSettingsForm(welcomeOff), false, "a welcome email turned off leaves double opt-in");
+	const signupsOff = fullForm("signups");
+	signupsOff.delete("requireConfirmation");
+	assert.equal("welcome" in readSettingsForm(signupsOff), false, "double opt-in turned off leaves the welcome email");
 });
 
 test("a switch only counts on its own page: off there, untouched elsewhere", () => {
@@ -89,6 +103,7 @@ test("a collapsed email section sends nothing of it, so what it saved stays", ()
 
 	assert.deepEqual(readSettingsForm(fullForm("welcome")), {
 		welcome: { enabled: true, subject: "Welcome", previewText: "", markdown: "Hi" },
+		requireConfirmation: false,
 	});
 });
 
@@ -98,6 +113,7 @@ test("without a section the form sends every field, as the one-page settings did
 	assert.equal(settings.postalAddress, "1 Main St, Paris");
 	assert.equal(settings.cleanup.enabled, true);
 	assert.equal(settings.welcome.subject, "Welcome");
+	assert.equal(settings.welcome.enabled, false, "double opt-in on keeps the welcome email off");
 
 	for (const section of ["design", "unknown"]) assert.deepEqual(readSettingsForm(fullForm(section)), {}, section);
 });
@@ -132,6 +148,7 @@ test("the overview says where each section stands", () => {
 		welcome: { text: "Replaced by the confirmation email", tone: "none" },
 		cleanup: { text: "On · after 8 ignored issues", tone: "on" },
 		website: { text: "Live · field-notes.mailcheap.ai", tone: "on" },
+		form: { text: "Off", tone: "off" },
 	});
 
 	const plain = { ...newsletter, requireConfirmation: false, welcome: { enabled: false }, cleanup: { enabled: false }, archiveEnabled: false };
@@ -143,6 +160,24 @@ test("the overview says where each section stands", () => {
 
 	const cleanupDefaults = getSettingsSummary({ newsletter: { ...newsletter, cleanup: { enabled: true } }, ...context });
 	assert.equal(cleanupDefaults.cleanup.text, "On · after 6 ignored issues", "the default count without one saved");
+});
+
+test("the form for the owner's site says whether it's on, on which sites, and when it waits for a plan", () => {
+	const withForm = (signupForm) => ({ ...newsletter, signupForm });
+	assert.deepEqual(getSettingsSummary({ newsletter: withForm({ enabled: true }), ...context }).form, { text: "On · any site", tone: "on" });
+	assert.deepEqual(getSettingsSummary({ newsletter: withForm({ enabled: true, allowedDomains: ["example.com"] }), ...context }).form, {
+		text: "On · example.com",
+		tone: "on",
+	});
+	assert.equal(
+		getSettingsSummary({ newsletter: withForm({ enabled: true, allowedDomains: ["example.com", "blog.dev", "shop.io"] }), ...context }).form.text,
+		"On · example.com +2"
+	);
+	assert.deepEqual(getSettingsSummary({ newsletter: withForm({ enabled: true }), ...context, hasPlan: false }).form, {
+		text: "Needs a plan",
+		tone: "warning",
+	});
+	assert.deepEqual(getSettingsSummary({ newsletter: withForm({ enabled: false }), ...context, hasPlan: false }).form, { text: "Off", tone: "off" });
 });
 
 test("the welcome email shows paused while the month's emails are used up", () => {

@@ -37,3 +37,15 @@ test("Read online links follow the setting and keep the archive's rules", () => 
 		delete process.env.NEWSLETTER_EXTERNAL_SITES;
 	}
 });
+
+// The subject slug and the external site meet in one function. A draft has no archive slug yet, so the
+// link is built from the subject with the name's fallback filled in, and it still leaves MailCheap's archive.
+test("a draft subject with a first-name tag still links to the external site", () => {
+	process.env.NEWSLETTER_EXTERNAL_SITES = '{"taco-and-tell":"https://tacoandtell.com/issues"}';
+	try {
+		const draft = { _id: campaign._id, subject: "Hello {{first_name|friend}}" };
+		assert.equal(getIssueWebUrl({ campaign: draft, newsletter }), "https://tacoandtell.com/issues/hello-friend");
+	} finally {
+		delete process.env.NEWSLETTER_EXTERNAL_SITES;
+	}
+});

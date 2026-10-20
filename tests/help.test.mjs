@@ -7,9 +7,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import NoticeWarmup from "../components/NoticeWarmup.jsx";
 import { HELP_ARTICLES, getHelpArticles } from "../lib/help.js";
+import { listAppPages } from "./helpers/app-pages.mjs";
 
-// The help center (app/(site)/help): its articles, the dashboard's links into it, and the send step's warm-up notice
-// that links to it. Its pages opening without a session, in the sitemap and with their metadata: tests/public-site.test.mjs.
+// The help center (app/(site)/help): its articles, the dashboard's links into it and its links into the dashboard, and
+// the send step's warm-up notice that links to it. Its pages opening without a session, in the sitemap and with their
+// metadata: tests/public-site.test.mjs.
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const HELP_DIR = "app/(site)/help";
 // The companies that send the emails.
@@ -59,6 +61,21 @@ test("every link into the help center opens one of its articles, at a section th
 			`${file} links to /help/${slug}`
 		);
 		if (section) assert.ok((await readSource(`${HELP_DIR}/${slug}/page.js`)).includes(`id="${section}"`), `${file} links to /help/${slug}#${section}`);
+	}
+});
+
+test("every link from the help center and the docs into the dashboard opens a page the app has", async () => {
+	const pages = await listAppPages();
+	const files = [...(await listSources(HELP_DIR)), ...(await listSources("app/(site)/docs"))];
+	const links = [];
+	for (const file of files) {
+		for (const [, href] of (await readSource(file)).matchAll(/<LinkApp\s+href=(?:"([^"]*)"|\{)/g)) links.push({ file, href });
+	}
+	assert.ok(links.length >= 30, "articles link to the dashboard pages they mention");
+	assert.ok(links.some(({ href }) => href === "/domains") && links.some(({ href }) => href === "/newsletters/welcome"));
+	for (const { file, href } of links) {
+		assert.ok(href, `${file} gives LinkApp a literal path`);
+		assert.ok(pages.has(href.replace(/[?#].*$/, "")), `${file} links to ${href}, which isn't a page of the app`);
 	}
 });
 

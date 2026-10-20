@@ -8,6 +8,9 @@ import { startMongo } from "./mongo.mjs";
 export const platformEmails = [];
 // Messages to Telegram's Bot API, newest last, with the token their URL carried.
 export const telegramMessages = [];
+// Requests to OpenAI's API (the content check), newest last: { path, body }.
+export const openaiRequests = [];
+let openaiHandler = null;
 let stripeHandler = null;
 let telegramAnswer = null;
 let visitor = 0;
@@ -27,6 +30,14 @@ function installFetch() {
 			telegramMessages.push({ token: telegram[1], ...JSON.parse(init.body) });
 			return Response.json({ ok: true, result: { message_id: telegramMessages.length } });
 		}
+		if (url.startsWith("https://api.openai.com/")) {
+			const path = new URL(url).pathname.replace(/^\/v1/, "");
+			const body = JSON.parse(init.body);
+			openaiRequests.push({ path, body });
+			if (!openaiHandler) throw new Error(`Unexpected OpenAI request: ${path}`);
+			const answer = await openaiHandler({ path, body });
+			return answer instanceof Response ? answer : Response.json(answer);
+		}
 		if (url.startsWith("https://api.stripe.com/")) {
 			if (!stripeHandler) throw new Error(`Unexpected Stripe request: ${init.method ?? "GET"} ${url}`);
 			const { pathname, searchParams } = new URL(url);
@@ -43,6 +54,11 @@ function installFetch() {
 
 export function mockStripe(handler) {
 	stripeHandler = handler;
+}
+
+// handler({ path, body }) answers like OpenAI: a JSON body, or a Response for errors.
+export function mockOpenAI(handler) {
+	openaiHandler = handler;
 }
 
 // The lookup keys a prices.list asks for, as Stripe gets them: lookup_keys[0], lookup_keys[1]…

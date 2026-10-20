@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { isCloud } from "@/lib/config";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { UNSUBSCRIBE_PLACEHOLDER } from "@/lib/render-email";
@@ -11,7 +12,8 @@ export default function WritingPage() {
 		<ArticleHelp slug="writing">
 			<h2 id="steps">Write, review, send</h2>
 			<p>
-				Start a draft from the Campaigns page. A campaign goes through three steps, shown at the top: Write, where you type the
+				Start a draft from the <LinkApp href="/campaigns">Campaigns page</LinkApp>. A campaign goes through three steps, shown at the
+				top: Write, where you type the
 				subject, the preview text and the issue; Review, a checklist of what to fix before it can go out; and Send, where you pick who
 				gets it and when. Everything saves as you type, and a check shows each time it&apos;s saved.
 			</p>
@@ -61,6 +63,21 @@ export default function WritingPage() {
 				block, and a line shows where it lands. Click it to select the block. From the keyboard, <kbd>⌘ Shift ↑</kbd> and{" "}
 				<kbd>⌘ Shift ↓</kbd> (<kbd>Ctrl</kbd> instead of <kbd>⌘</kbd> on Windows) move the block the cursor is in. Moves undo like any
 				other change.
+			</p>
+
+			<h2 id="first-name">Greeting readers by name</h2>
+			<p>
+				<code>{"{{first_name}}"}</code> shows each reader&apos;s first name. Type <kbd>/</kbd> and pick First name, or click the person
+				icon at the end of the subject. Both add <code>{"{{first_name|there}}"}</code>: the word after the bar is what readers without a
+				first name see, so &ldquo;Hi {"{{first_name|there}}"}&rdquo; reads &ldquo;Hi Jane&rdquo; or &ldquo;Hi there&rdquo;. Change it,
+				or remove it with the bar to show nothing.
+			</p>
+			<p>
+				It works in the subject, the preview text and the content, and in your welcome and confirmation emails. Your website and its
+				issue pages always show the fallback, so no reader&apos;s name is ever public. The preview and test emails show the name Jane,
+				or in a test email your own first name if you&apos;re one of your contacts with one. The review step flags any other{" "}
+				<code>{"{{...}}"}</code>, like a tag from another platform, since it would go out as written. First names come from{" "}
+				<Link href={getHelpHref("contacts", "details")}>your contacts</Link>.
 			</p>
 
 			<h2 id="preview">Preview and test emails</h2>

@@ -1,11 +1,12 @@
+import Link from "next/link";
 import BadgeStatus from "@/components/BadgeStatus";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LIMITS } from "@/lib/config";
 import { formatDate, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-// Customers' newest campaigns (lib/admin-stats.js listRecentCampaigns). The numbers are the issue's, and turn red past
-// the rates that pause a send.
+// Customers' newest campaigns (lib/admin-stats.js listRecentCampaigns), each opening its admin page. The numbers are the
+// issue's, and turn red past the rates that pause a send.
 export default function TableRecentCampaigns({ campaigns }) {
 	if (campaigns.length === 0) {
 		return <p className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground shadow-border">No campaigns yet</p>;
@@ -28,11 +29,15 @@ export default function TableRecentCampaigns({ campaigns }) {
 					{campaigns.map((campaign) => (
 						<TableRow key={campaign.id} className="tabular-nums">
 							<TableCell className="max-w-0 py-2.5 pl-4 sm:w-1/2">
-								<span className="block truncate font-medium">{campaign.subject || "Untitled"}</span>
-								<span className="block truncate text-xs text-muted-foreground">
-									{campaign.ownerEmail ?? "Unknown owner"}
-									{campaign.at && ` · ${formatDate(campaign.at)}`}
-								</span>
+								<Link href={`/admin/campaigns/${campaign.id}`} className="group block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+									<span className="block truncate font-medium underline decoration-transparent underline-offset-4 transition-colors duration-150 group-hover:decoration-foreground/30">
+										{campaign.subject || "Untitled"}
+									</span>
+									<span className="block truncate text-xs text-muted-foreground">
+										{campaign.ownerEmail ?? "Unknown owner"}
+										{campaign.at && ` · ${formatDate(campaign.at)}`}
+									</span>
+								</Link>
 							</TableCell>
 							<TableCell className="hidden sm:table-cell">
 								<BadgeStatus status={campaign.status} />

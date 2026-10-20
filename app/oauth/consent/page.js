@@ -85,6 +85,7 @@ export default async function ConsentPage({ searchParams }) {
 						<Link
 							href="/billing"
 							target="_blank"
+							rel="noopener noreferrer"
 							className="text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground"
 						>
 							pick one here

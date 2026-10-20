@@ -12,8 +12,10 @@ import { SlashCommand } from "@/components/MenuSlash";
 import { BlockHandle } from "@/lib/editor-block-handle";
 import { Callout } from "@/lib/editor-callout";
 import { ImageAligned } from "@/lib/editor-image";
+import { MergeTags } from "@/lib/editor-merge-tags";
 import { toast } from "@/lib/toast";
-import { IMAGE_TYPES, getDisplaySize, prepareImage, uploadImage } from "@/lib/upload-image";
+import { IMAGE_TYPES, IMAGE_TYPE_ERROR, getDisplaySize, prepareImage, uploadImage } from "@/lib/upload-image";
+import { useFileDropGuard } from "@/lib/use-file-drop";
 
 const MIN_HEIGHT = "min-h-[560px]";
 
@@ -41,6 +43,7 @@ export default function EditorRich({ content, onChange }) {
 			}),
 			Callout,
 			BlockHandle,
+			MergeTags,
 			Placeholder.configure({
 				placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or press / for commands"),
 			}),
@@ -61,9 +64,18 @@ export default function EditorRich({ content, onChange }) {
 				setIsEditingLink(true);
 				return true;
 			},
+			// The file handler takes pictures and passes on any other file, which would vanish without a word.
+			handleDrop: (_view, event) => {
+				const files = [...(event.dataTransfer?.files ?? [])];
+				if (files.length === 0 || files.some((file) => IMAGE_TYPES.includes(file.type))) return false;
+				event.preventDefault();
+				toast.error(IMAGE_TYPE_ERROR);
+				return true;
+			},
 		},
 		onUpdate: ({ editor: current }) => onChange(current.getHTML()),
 	});
+	useFileDropGuard();
 
 	if (!editor) return <div className={MIN_HEIGHT} />;
 

@@ -6,8 +6,8 @@ import { ImagePlus, Loader2 } from "lucide-react";
 import DialogImagePicker, { CHECKERBOARD } from "@/components/DialogImagePicker";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
-import { uploadImageFile } from "@/lib/upload-image";
-import { useImageDrop } from "@/lib/use-image-drop";
+import { IMAGE_TYPES, IMAGE_TYPE_ERROR, uploadImageFile } from "@/lib/upload-image";
+import { useFileDrop } from "@/lib/use-file-drop";
 import { cn } from "@/lib/utils";
 
 // An image setting: drop a file on it, or open the picker to upload one or reuse an earlier upload. The URL
@@ -16,7 +16,11 @@ export default function InputImage({ name, defaultValue, label, isRound, onChang
 	const [url, setUrl] = useState(defaultValue ?? "");
 	const [isPickerOpen, setIsPickerOpen] = useState(false);
 	const [isUploading, setIsUploading] = useState(false);
-	const { isDragging, dropProps } = useImageDrop(upload);
+	const { isDragging, dropProps } = useFileDrop({
+		accept: IMAGE_TYPES,
+		onFile: upload,
+		onReject: () => toast.error(IMAGE_TYPE_ERROR),
+	});
 
 	function update(value) {
 		setUrl(value);

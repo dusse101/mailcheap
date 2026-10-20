@@ -71,7 +71,7 @@ export default function BarSave({ isDirty, isSaving, savedAt, onDiscard, label =
 				<p aria-live="polite" className="flex min-w-0 flex-1 items-center gap-2.5 text-sm font-medium">
 					<span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
 						{isSaved ? (
-							<Check key={savedAt} className="size-4 text-emerald-400 animate-icon-in dark:text-emerald-600" />
+							<Check key={savedAt} className="size-4 text-emerald-500 animate-icon-in" />
 						) : (
 							<span className="relative size-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 dark:bg-amber-500 dark:ring-amber-500/25">
 								{isCued && (

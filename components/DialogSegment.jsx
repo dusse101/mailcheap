@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
-import { countSegment, deleteSegment, saveSegment } from "@/app/(app)/contacts/actions";
+import { countSegment, deleteSegment, getContactOptions, saveSegment } from "@/app/(app)/contacts/actions";
 import LinkHelp from "@/components/LinkHelp";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,17 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectSeparator,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber } from "@/lib/format";
 import {
 	CONTACT_SOURCES,
@@ -25,6 +35,7 @@ import {
 	SEGMENT_FIELDS,
 	SEGMENT_PRESETS,
 	checkSegmentRules,
+	getSegmentField,
 } from "@/lib/segments";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -70,18 +81,31 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 	const [isCounting, startCounting] = useTransition();
 	const [isSaving, startSaving] = useTransition();
 	const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+	// The account's own fields and the newsletter's tags, read as the editor opens.
+	const [options, setOptions] = useState(null);
+	const fields = options?.fields ?? [];
+	const tags = options?.tags.map(({ name: tag }) => tag) ?? [];
 	const countTimer = useRef(null);
 	const countRequest = useRef(0);
-	const { rules } = checkSegmentRules(draft);
+	const { rules } = checkSegmentRules(draft, { fields });
 	const canSave = Boolean(rules && name.trim()) && !isSaving;
+	const isWaitingForFields = !options && draft.conditions.some(({ field }) => field.startsWith("fields."));
 
 	useEffect(() => () => clearTimeout(countTimer.current), []);
+
+	useEffect(() => {
+		let isCurrent = true;
+		getContactOptions(newsletterId).then((result) => isCurrent && setOptions(result?.error ? { fields: [], tags: [] } : result));
+		return () => {
+			isCurrent = false;
+		};
+	}, [newsletterId]);
 
 	// Counted a moment after the last change, and only the latest answer shows.
 	function update(next) {
 		setDraft(next);
 		clearTimeout(countTimer.current);
-		const checked = checkSegmentRules(next).rules;
+		const checked = checkSegmentRules(next, { fields }).rules;
 		if (!checked) return;
 		countTimer.current = setTimeout(() => {
 			const request = ++countRequest.current;
@@ -159,17 +183,23 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 
 			<div className="flex flex-col gap-2">
 				{draft.conditions.length > 1 && <ToggleMatch value={draft.match} onChange={(match) => update({ ...draft, match })} />}
-				{draft.conditions.length > 0 && (
-					<ul className="flex flex-col gap-2">
-						{draft.conditions.map((condition) => (
-							<RowCondition
-								key={condition.key}
-								condition={condition}
-								onChange={(change) => changeCondition(condition.key, change)}
-								onRemove={() => update({ ...draft, conditions: draft.conditions.filter(({ key }) => key !== condition.key) })}
-							/>
-						))}
-					</ul>
+				{isWaitingForFields ? (
+					<Skeleton className="h-10 w-full rounded-xl" />
+				) : (
+					draft.conditions.length > 0 && (
+						<ul className="flex flex-col gap-2">
+							{draft.conditions.map((condition) => (
+								<RowCondition
+									key={condition.key}
+									condition={condition}
+									fields={fields}
+									tags={tags}
+									onChange={(change) => changeCondition(condition.key, change)}
+									onRemove={() => update({ ...draft, conditions: draft.conditions.filter(({ key }) => key !== condition.key) })}
+								/>
+							))}
+						</ul>
+					)
 				)}
 				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 					<Button
@@ -272,15 +302,30 @@ function ToggleMatch({ value, onChange }) {
 	);
 }
 
-function RowCondition({ condition, onChange, onRemove }) {
-	const field = SEGMENT_FIELDS[condition.field];
+// fields: the account's own, after the built-in ones; tags: the newsletter's tag names, offered for tag conditions.
+function RowCondition({ condition, fields, tags, onChange, onRemove }) {
+	const field = getSegmentField(condition.field, fields);
+	const removeButton = (
+		<Button type="button" variant="ghost" size="icon-sm" aria-label="Remove the condition" onClick={onRemove} className="shrink-0 text-muted-foreground">
+			<X />
+		</Button>
+	);
+	// A field the account no longer has: the segment keeps the condition until it's removed.
+	if (!field) {
+		return (
+			<li className="flex items-center gap-1.5 rounded-xl bg-muted/50 py-1.5 pr-1.5 pl-3 text-sm text-muted-foreground animate-enter">
+				<span className="min-w-0 flex-1 truncate">{condition.field}</span>
+				{removeButton}
+			</li>
+		);
+	}
 	const op = field.ops[condition.op];
-	const isInvalid = Boolean(op.value) && Boolean(checkSegmentRules({ conditions: [condition] }).problem);
+	const isInvalid = Boolean(op?.value) && Boolean(checkSegmentRules({ conditions: [condition] }, { fields }).problem);
 
 	return (
 		<li className="flex items-start gap-1.5 rounded-xl bg-muted/50 p-1.5 animate-enter">
 			<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-				<Select value={condition.field} onValueChange={(value) => onChange(() => withKey(startCondition(value), condition.key))}>
+				<Select value={condition.field} onValueChange={(value) => onChange(() => withKey(startCondition(value, fields, tags), condition.key))}>
 					<SelectTrigger size="sm" aria-label="Condition" className="bg-background font-medium">
 						<SelectValue />
 					</SelectTrigger>
@@ -290,9 +335,22 @@ function RowCondition({ condition, onChange, onRemove }) {
 								{label}
 							</SelectItem>
 						))}
+						{fields.length > 0 && (
+							<>
+								<SelectSeparator />
+								<SelectGroup>
+									<SelectLabel>Your fields</SelectLabel>
+									{fields.map(({ key, label }) => (
+										<SelectItem key={key} value={`fields.${key}`}>
+											{label}
+										</SelectItem>
+									))}
+								</SelectGroup>
+							</>
+						)}
 					</SelectContent>
 				</Select>
-				<Select value={condition.op} onValueChange={(value) => onChange((current) => changeOp(current, value))}>
+				<Select value={condition.op} onValueChange={(value) => onChange((current) => changeOp(current, value, fields, tags))}>
 					<SelectTrigger size="sm" aria-label="Comparison" className="bg-background">
 						<SelectValue />
 					</SelectTrigger>
@@ -304,30 +362,54 @@ function RowCondition({ condition, onChange, onRemove }) {
 						))}
 					</SelectContent>
 				</Select>
-				{op.value && (
+				{op?.value && (
 					<InputValue
 						type={op.value}
 						op={condition.op}
 						value={condition.value}
 						unit={op.unit}
+						tags={tags}
 						isInvalid={isInvalid}
 						onChange={(value) => onChange((current) => ({ ...current, value }))}
 					/>
 				)}
 			</div>
-			<Button type="button" variant="ghost" size="icon-sm" aria-label="Remove the condition" onClick={onRemove} className="shrink-0 text-muted-foreground">
-				<X />
-			</Button>
+			{removeButton}
 		</li>
 	);
 }
 
-function InputValue({ type, op, value, unit, isInvalid, onChange }) {
+function InputValue({ type, op, value, unit, tags = [], isInvalid, onChange }) {
 	const inputId = useId();
+	const listId = useId();
 	const inputClass = cn(
 		"h-7 rounded-md bg-background px-2 text-sm shadow-border outline-none transition-shadow duration-150 focus-visible:ring-3 focus-visible:ring-ring/50",
 		isInvalid && "ring-2 ring-destructive/40"
 	);
+
+	if (type === "tag") {
+		return (
+			<>
+				<input
+					value={value ?? ""}
+					onChange={(event) => onChange(event.target.value)}
+					list={tags.length > 0 ? listId : undefined}
+					placeholder="vip"
+					aria-label="Tag"
+					aria-invalid={isInvalid || undefined}
+					maxLength={40}
+					className={cn(inputClass, "w-36 [&::-webkit-calendar-picker-indicator]:hidden")}
+				/>
+				{tags.length > 0 && (
+					<datalist id={listId}>
+						{tags.map((tag) => (
+							<option key={tag} value={tag} />
+						))}
+					</datalist>
+				)}
+			</>
+		);
+	}
 
 	if (type === "source") {
 		const isOther = !CONTACT_SOURCES[value];
@@ -365,14 +447,19 @@ function InputValue({ type, op, value, unit, isInvalid, onChange }) {
 			<input
 				id={inputId}
 				type={type === "date" ? "date" : type === "text" ? "text" : "number"}
-				min={type === "date" || type === "text" ? undefined : 1}
-				inputMode={type === "days" || type === "count" ? "numeric" : undefined}
+				min={type === "days" || type === "count" ? 1 : undefined}
+				step={type === "number" ? "any" : undefined}
+				inputMode={type === "days" || type === "count" ? "numeric" : type === "number" ? "decimal" : undefined}
 				value={value ?? ""}
 				onChange={(event) => onChange(event.target.value)}
 				placeholder={type === "text" ? (op === "ends_with" ? "@company.com" : "text") : undefined}
 				aria-invalid={isInvalid || undefined}
 				aria-label={unit ? undefined : "Value"}
-				className={cn(inputClass, "text-foreground tabular-nums", type === "date" ? "w-36" : type === "text" ? "w-40" : "w-16")}
+				className={cn(
+					inputClass,
+					"text-foreground tabular-nums",
+					type === "date" ? "w-36" : type === "text" ? "w-40" : type === "number" ? "w-24" : "w-16"
+				)}
 			/>
 			{unit}
 		</label>
@@ -380,21 +467,24 @@ function InputValue({ type, op, value, unit, isInvalid, onChange }) {
 }
 
 // A field's first op, with the value its kind of input starts at.
-function startCondition(field) {
-	const [op, { value }] = Object.entries(SEGMENT_FIELDS[field].ops)[0];
-	return { field, op, ...(value && { value: startValue(value) }) };
+function startCondition(name, fields, tags) {
+	const [op, { value }] = Object.entries(getSegmentField(name, fields).ops)[0];
+	return { field: name, op, ...(value && { value: startValue(value, tags) }) };
 }
 
-// The value stays when the new op takes the same kind.
-function changeOp(condition, op) {
-	const ops = SEGMENT_FIELDS[condition.field].ops;
+// The value stays when the new op takes the same kind. The select reports "" while its options change with the field.
+function changeOp(condition, op, fields, tags) {
+	const { ops } = getSegmentField(condition.field, fields);
+	if (!Object.hasOwn(ops, op)) return condition;
 	const kind = ops[op].value;
 	if (!kind) return { key: condition.key, field: condition.field, op };
-	return { ...condition, op, value: ops[condition.op].value === kind ? condition.value : startValue(kind) };
+	return { ...condition, op, value: ops[condition.op]?.value === kind ? condition.value : startValue(kind, tags) };
 }
 
-function startValue(kind) {
+// A tag condition starts on the most used tag.
+function startValue(kind, tags = []) {
 	if (kind === "date") return new Date().toISOString().slice(0, 10);
+	if (kind === "tag") return tags[0] ?? "";
 	return START_VALUES[kind];
 }
 
@@ -402,7 +492,7 @@ function withKey(condition, key = crypto.randomUUID()) {
 	return { ...condition, key };
 }
 
-const START_VALUES = { days: 30, count: 3, source: "website", text: "" };
+const START_VALUES = { days: 30, count: 3, source: "website", text: "", number: 0 };
 const NEW_CONDITION = { field: "opened", op: "within", value: 30 };
 const MATCHES = [
 	{ id: "all", label: "Meets all" },

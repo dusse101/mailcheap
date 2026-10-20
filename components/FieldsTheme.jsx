@@ -193,8 +193,10 @@ function SelectFont({ label, value, onChange }) {
 	);
 }
 
-// A row of choices drawn rather than named; arrow keys move between them, as in any radio group.
-function Segmented({ label, value, options, onChange }) {
+// A row of choices drawn rather than named; arrow keys move between them, as in any radio group. size sm: named
+// choices, as tall as the app's tabs.
+export function Segmented({ label, value, options, onChange, size = "default" }) {
+	const isSmall = size === "sm";
 	function move(event, index) {
 		const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
 		if (!step) return;
@@ -207,7 +209,7 @@ function Segmented({ label, value, options, onChange }) {
 	}
 
 	return (
-		<div role="radiogroup" aria-label={label} className="flex gap-1 rounded-xl bg-muted p-1">
+		<div role="radiogroup" aria-label={label} className={cn("flex bg-muted", isSmall ? "h-8 rounded-lg p-[3px]" : "gap-1 rounded-xl p-1")}>
 			{options.map((option, index) => {
 				const isChecked = option.value === value;
 				return (
@@ -216,15 +218,16 @@ function Segmented({ label, value, options, onChange }) {
 						type="button"
 						role="radio"
 						aria-checked={isChecked}
-						aria-label={option.label}
-						title={option.label}
+						aria-label={isSmall ? undefined : option.label}
+						title={isSmall ? undefined : option.label}
 						data-value={option.value}
 						tabIndex={isChecked ? 0 : -1}
 						disabled={option.isDisabled}
 						onClick={() => onChange(option.value)}
 						onKeyDown={(event) => move(event, index)}
 						className={cn(
-							"grid h-9 flex-1 place-items-center rounded-lg text-muted-foreground transition-[color,background-color,box-shadow,scale] duration-150 ease-out outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-30",
+							"grid flex-1 place-items-center text-muted-foreground transition-[color,background-color,box-shadow,scale] duration-150 ease-out outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-30",
+							isSmall ? "rounded-md px-3 text-sm font-medium" : "h-9 rounded-lg",
 							isChecked && "bg-background text-foreground shadow-border"
 						)}
 					>

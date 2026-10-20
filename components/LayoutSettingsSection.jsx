@@ -27,6 +27,7 @@ export default function LayoutSettingsSection({ section, page }) {
 				testEmail={page.user.email}
 				cleanupTotals={page.cleanupTotals}
 				welcomePause={page.welcomePause}
+				isCloud={page.isCloud}
 			/>
 		</LayoutNarrow>
 	);

@@ -325,7 +325,9 @@ describe("what alerts", () => {
 			for (const authorization of [undefined, CRON_SECRET, `Bearer ${CRON_SECRET.slice(1)}`, `Bearer ${CRON_SECRET}x`, "Bearer someone-elses-secret-0123456789"]) {
 				assert.equal((await call(authorization)).status, 401, String(authorization));
 			}
-			assert.deepEqual(await (await call(`Bearer ${CRON_SECRET}`)).json(), { postshiba: { alerts: [] }, telegram: { skipped: "already announced" } });
+			const { summaries, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
+			assert.deepEqual(checks, { postshiba: { alerts: [] }, telegram: { skipped: "already announced" } });
+			assert.equal(typeof summaries.queued, "number", "and the summary emails due this hour");
 
 			const tenantId = "TnHeld01";
 			fake.state.tenants.set(tenantId, { id: tenantId, name: `mc-${user.accountId}`, slug: `mc-${user.accountId}`, suspended: false, held: true });

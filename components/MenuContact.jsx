@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Moon, MoreHorizontal, Trash2, UserCheck, UserPlus, UserX } from "lucide-react";
+import { Loader2, Moon, MoreHorizontal, Pencil, Trash2, UserCheck, UserPlus, UserX } from "lucide-react";
 import { deleteContact, setContactStatus } from "@/app/(app)/contacts/actions";
+import DialogContactDetails from "@/components/DialogContactDetails";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -31,8 +32,9 @@ const AFTER_DELETE = {
 	complained: "They marked an email as spam, so adding them again won't email them.",
 };
 
-// The status changes lib/contact-status.js allows for this contact, then delete.
-export default function MenuContact({ id, email, status }) {
+// Its details, the status changes lib/contact-status.js allows for this contact, then delete. firstName, tags, fields:
+// what the details dialog edits.
+export default function MenuContact({ id, email, status, firstName = "", tags = [], fields = {} }) {
 	const [dialog, setDialog] = useState(null);
 	const [isPending, startTransition] = useTransition();
 	const lock = STATUS_LOCKS[status];
@@ -64,6 +66,11 @@ export default function MenuContact({ id, email, status }) {
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end" className="min-w-44">
+					<DropdownMenuItem onSelect={() => setDialog("details")}>
+						<Pencil />
+						Edit details
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
 					{lock && <DropdownMenuLabel className="max-w-56 font-normal">{lock}.</DropdownMenuLabel>}
 					{getStatusChanges(status).map((nextStatus) => {
 						const { label, icon: Icon } = getChangeItem(status, nextStatus);
@@ -85,6 +92,11 @@ export default function MenuContact({ id, email, status }) {
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
+			<DialogContactDetails
+				contact={{ id, email, firstName, tags, fields }}
+				isOpen={dialog === "details"}
+				onOpenChange={changeOpen("details")}
+			/>
 			<DialogConsentContact id={id} email={email} status={status} isOpen={dialog === "consent"} onOpenChange={changeOpen("consent")} />
 			<DialogDeleteContact id={id} email={email} status={status} isOpen={dialog === "delete"} onOpenChange={changeOpen("delete")} />
 		</>

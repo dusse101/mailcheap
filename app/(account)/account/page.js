@@ -5,6 +5,7 @@ import AvatarUser from "@/components/AvatarUser";
 import BadgeStatus from "@/components/BadgeStatus";
 import CardSettings, { RowSettings } from "@/components/CardSettings";
 import { getPlanDetails } from "@/components/CardSubscription";
+import CardSummaryEmail from "@/components/CardSummaryEmail";
 import DialogDeleteAccount from "@/components/DialogDeleteAccount";
 import FormProfile from "@/components/FormProfile";
 import HeaderPage from "@/components/HeaderPage";
@@ -14,10 +15,11 @@ import { DELETION_GRACE_DAYS, getDeletionBlockers } from "@/lib/account-deletion
 import { getAccountStatus, hasActiveSubscription } from "@/lib/account-state";
 import { hasGoogleSignIn } from "@/lib/accounts";
 import { requireAccount } from "@/lib/auth";
-import { isCloud } from "@/lib/config";
+import { APP_NAME, getEmailFrom, isCloud } from "@/lib/config";
 import { formatDate } from "@/lib/format";
 import { getAccountPlan } from "@/lib/plans";
 import { MAX_NAME_LENGTH } from "@/lib/profile";
+import { SUMMARY_HOUR, getSummaryFrequency, isSummaryEligible } from "@/lib/summary";
 
 export const metadata = { title: "Account" };
 
@@ -40,10 +42,25 @@ export default async function AccountPage() {
 					</RowSettings>
 				</CardSettings>
 				{isCloud() && <CardBilling account={account} />}
+				{isCloud() && (
+					<CardSummaryEmail
+						frequency={getSummaryFrequency(account)}
+						isEligible={isSummaryEligible(account)}
+						hour={SUMMARY_HOUR}
+						sender={getSummarySender()}
+						stagger={3}
+					/>
+				)}
 				<CardDelete email={user.email} blockers={blockers} cancelAt={account.cancelAt} />
 			</div>
 		</LayoutNarrow>
 	);
+}
+
+// MailCheap as the preview shows the sender, the way the inbox will.
+function getSummarySender() {
+	const from = getEmailFrom() ?? "";
+	return { name: APP_NAME, fromName: APP_NAME, fromEmail: /<([^>]+)>/.exec(from)?.[1] ?? from, imageUrl: "/icon-192.png" };
 }
 
 function CardBilling({ account }) {
@@ -73,7 +90,7 @@ function CardBilling({ account }) {
 
 function CardDelete({ email, blockers, cancelAt }) {
 	return (
-		<CardSettings title="Delete account" stagger={3} className="mt-6">
+		<CardSettings title="Delete account" stagger={4} className="mt-6">
 			<p className="px-4 py-3 text-sm text-pretty text-muted-foreground">
 				Your account stops at once. {DELETION_GRACE_DAYS} days later, its newsletters, contacts, campaigns and images are deleted
 				for good. Signing in before then restores it.

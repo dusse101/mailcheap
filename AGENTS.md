@@ -61,8 +61,20 @@ This repository is a fork of MailCheap for the Taco and Tell newsletter, self-ho
 - The code is public: never commit secrets, keys, tokens or personal data (emails, phone numbers, addresses, customers' data), in code, tests, fixtures or commit messages. Tests use `example.com` and made-up values.
 - Write "MailCheap" in display text: copy, titles, emails, docs, comments. Lowercase in identifiers and machine names: `mailcheap.ai`, `MAILCHEAP_CLOUD`, `LogoMailcheap`, package and file names.
 - Copy is plain and short, in sentence case: only the first word of a title or a button is capitalized.
-- The help center (`app/(site)/help`, its articles listed in `lib/help.js`) explains every feature to the people who use MailCheap, in plain words. A change to what they see or to how something works updates the article that covers it in the same commit, and a new feature gets a section or an article. Articles take their numbers from the code's constants, so those follow it. Dashboard text that needs more than a line links to its article with `LinkHelp`.
+- The help center (`app/(site)/help`, its articles listed in `lib/help.js`) explains every feature to the people who use MailCheap, in plain words. A change to what they see or to how something works updates the article that covers it in the same commit, and a new feature gets a section or an article. Articles take their numbers from the code's constants, so those follow it. Articles and the docs link to the dashboard pages they mention with `LinkApp` and the page's path, like `/domains`, which `tests/help.test.mjs` checks against the app's pages. Other text written for them that names a dashboard page, like MailCheap Cloud's changelog, links it the same way. Dashboard text that needs more than a line links to its article with `LinkHelp`.
 - Public content pages end on a call to action. Shared ones, the help center and the docs, render the `ArticleUpsell` site extension at the end, which adds nothing on a self-hosted server.
+
+## Security review
+
+Every feature or significant change gets a security review of its diff before it's pushed: in Cursor, the security-review subagent, with a large diff split into parts it can read whole. Fix what it rates medium or higher first, each fix with its test. Check at least:
+
+- **Authorization**: every action, route and MCP tool finds the account (`requireAccount()`, `authenticateRequest()`) and queries through `scoped()`, so no ID it's given reaches another account's data.
+- **Injection**: input never becomes a Mongo operator or field path, unescaped HTML in a page, an email or a preview, CSS in a theme, a template in a merge tag, or a formula in a CSV export.
+- **Abuse**: public endpoints have limits per visitor and per target, nothing a script can trigger mails a stranger more than a few times, and what a script can forge (Origin, Referer, a form token it can fetch) is never the only check.
+- **Redirects**: return paths are same-origin only, and links built from input are http(s) only.
+- **Consent and suppression**: unsubscribed, bounced and complained contacts stay out of sends, and bringing someone back takes their consent.
+- **AI assistants**: MCP output that carries people's content (names, fields, issues) is data, never instructions, and a tool that deletes or sends says what it will do.
+- **Secrets and personal data**: none in logs, error messages, the client bundle or the open source.
 
 ## Code style
 

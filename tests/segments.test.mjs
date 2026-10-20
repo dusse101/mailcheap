@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { createExportToken } from "../lib/export-token.js";
 import { checkSegmentRules, compileSegment, describeSegment } from "../lib/segments.js";
 import { activate, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 
@@ -269,6 +270,49 @@ describe("segments through the API", () => {
 		assert.deepEqual([back.body.segment, back.body.sendProblem, back.body.audience.contacts], [null, null, 4]);
 	});
 
+	test("an export's file holds exactly what its link counted, with a segment, a tag or both", async () => {
+		const user = await customer("segment-export@example.com");
+		await addContacts(user);
+		await m.Contact.updateMany(
+			{ accountId: user.accountId, email: { $in: ["fresh@example.com", "cold@example.net", "left@example.com"] } },
+			{ $set: { tags: ["vip"] } }
+		);
+		assert.equal((await api(user.key, "POST", "/contacts/fields", { label: "Company", type: "text" })).status, 201);
+		assert.equal((await api(user.key, "PATCH", "/contacts/fresh%40example.com/details", { fields: { company: "Acme" } })).status, 200);
+		const segment = (await api(user.key, "POST", "/segments", { name: "From the form", conditions: [{ field: "source", op: "is", value: "website" }] })).body;
+
+		async function exported(query) {
+			const response = await api(user.key, "GET", `/contacts/export?${query}`);
+			assert.equal(response.status, 200, JSON.stringify(response.body));
+			const [header, ...rows] = (await (await m.exportRoute.GET(new Request(response.body.url))).text()).split(/\r?\n/).filter(Boolean);
+			const emails = rows.map((row) => row.split(",")[0]).sort();
+			assert.equal(emails.length, response.body.count, `${query}: the file holds what the link counted`);
+			return { header, rows, emails, url: response.body.url };
+		}
+
+		assert.deepEqual((await exported(`segment=${segment.id}`)).emails, ["fresh@example.com", "left@example.com"]);
+		assert.deepEqual((await exported("tag=vip")).emails, ["cold@example.net", "fresh@example.com", "left@example.com"]);
+		assert.deepEqual((await exported(`segment=${segment.id}&tag=vip&status=active`)).emails, ["fresh@example.com"]);
+		assert.deepEqual((await exported(`segment=${segment.id}&search=left`)).emails, ["left@example.com"]);
+		assert.deepEqual((await exported(`segment=${segment.id}&search=nobody`)).emails, []);
+		const everyone = await exported("");
+		assert.equal(everyone.emails.length, 5);
+		assert.match(everyone.header, /,company$/, "the account's fields are columns");
+		assert.match(everyone.rows.find((row) => row.startsWith("fresh@")), /,Acme$/);
+
+		// A link to a segment deleted since gives nothing rather than every contact.
+		const { url } = await exported(`segment=${segment.id}`);
+		assert.equal((await api(user.key, "DELETE", `/segments/${segment.id}`)).status, 200);
+		assert.equal((await m.exportRoute.GET(new Request(url))).status, 404);
+
+		// Another account's segment can't be exported, even through a link signed with it.
+		const other = await customer("segment-export-other@example.com");
+		const theirs = (await api(other.key, "POST", "/segments", { name: "Theirs", conditions: [{ field: "opened", op: "never" }] })).body;
+		assertError(await api(user.key, "GET", `/contacts/export?segment=${theirs.id}`), 404, "not_found");
+		const { token } = createExportToken({ accountId: user.accountId, segmentId: theirs.id });
+		assert.equal((await m.exportRoute.GET(new Request(`http://localhost/api/v1/contacts/export.csv?token=${token}`))).status, 404);
+	});
+
 	test("segments stay in their account and newsletter", async () => {
 		const owner = await customer("segment-owner@example.com");
 		const other = await customer("segment-other@example.com");
@@ -285,8 +329,17 @@ describe("segments through the API", () => {
 		const url = await as(owner, () =>
 			catchRedirect(m.newsletters.saveNewsletter(null, form({ name: "Second", slug: "segment-owner-second", postalAddress: "1 Main St, Paris" })))
 		);
-		const second = (await api(owner.key, "POST", "/segments", { newsletter: url.split("/").at(-1), name: "There", conditions: [{ field: "opened", op: "never" }] })).body;
+		const secondId = url.split("/").at(-1);
+		const second = (await api(owner.key, "POST", "/segments", { newsletter: secondId, name: "There", conditions: [{ field: "opened", op: "never" }] })).body;
 		const id = (await api(owner.key, "POST", "/campaigns", { subject: "Issue" })).body.id;
 		assert.match(assertError(await api(owner.key, "PATCH", `/campaigns/${id}`, { segment: second.id }), 400, "validation_failed"), /another newsletter/);
+
+		// The list and the export refuse a segment of another newsletter than the one asked for, and follow the segment's own.
+		for (const path of ["/contacts", "/contacts/export"]) {
+			const mismatch = await api(owner.key, "GET", `${path}?newsletter=${owner.newsletterId}&segment=${second.id}`);
+			assert.match(assertError(mismatch, 400, "validation_failed"), /another newsletter/, path);
+			assert.equal((await api(owner.key, "GET", `${path}?newsletter=${secondId}&segment=${second.id}`)).status, 200, path);
+			assert.equal((await api(owner.key, "GET", `${path}?segment=${second.id}`)).status, 200, path);
+		}
 	});
 });
