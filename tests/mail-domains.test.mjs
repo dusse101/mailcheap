@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findDomainsWithoutMail } from "../lib/mail-domains.js";
+import { checkMailDomain, findDomainsWithoutMail } from "../lib/mail-domains.js";
 
 const dnsError = (code) => Object.assign(new Error(code), { code });
 
@@ -29,6 +29,32 @@ test("a domain takes email with an MX record, or without one through its own add
 	};
 	const withoutMail = await findDomainsWithoutMail(Object.keys(answers), fakeDns(answers));
 	assert.deepEqual([...withoutMail].sort(), ["gone.example", "nothing.example", "null-mx.example"], "DNS trouble keeps the address");
+});
+
+test("the list hygiene tells a domain without mail from one DNS couldn't answer for", async () => {
+	const dns = fakeDns({
+		"has-mx.example": { mx: [{ exchange: "mx1.has-mx.example", priority: 10 }] },
+		"null-mx.example": { mx: [{ exchange: "", priority: 0 }] },
+		"dot-mx.example": { mx: [{ exchange: ".", priority: 0 }] },
+		"gone.example": { mx: "ENOTFOUND" },
+		"a-only.example": { a: ["192.0.2.10"] },
+		"nothing.example": {},
+		"servfail.example": { mx: "ESERVFAIL" },
+		"slow.example": { mx: "ETIMEOUT" },
+		"refused-a.example": { a: "ECONNREFUSED" },
+	});
+	const verdicts = {
+		"has-mx.example": "ok",
+		"null-mx.example": "none",
+		"dot-mx.example": "none",
+		"gone.example": "none",
+		"a-only.example": "ok",
+		"nothing.example": "none",
+		"servfail.example": "unknown",
+		"slow.example": "unknown",
+		"refused-a.example": "unknown",
+	};
+	for (const [domain, verdict] of Object.entries(verdicts)) assert.equal(await checkMailDomain(domain, dns), verdict, domain);
 });
 
 test("big mailbox providers aren't looked up, and each domain is looked up once", async () => {

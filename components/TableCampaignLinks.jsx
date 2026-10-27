@@ -1,3 +1,5 @@
+import { Globe } from "lucide-react";
+import ImageFavicon from "@/components/ImageFavicon";
 import LinkHelp from "@/components/LinkHelp";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, formatNumber, formatRate } from "@/lib/format";
@@ -42,24 +44,32 @@ export default function TableCampaignLinks({ stats, html, webUrl, style }) {
 
 function RowLink({ link, label, total }) {
 	const url = formatLinkUrl(link.url);
+	const webUrl = normalizeLink(link.url);
 	const share = total ? Math.min(link.clickers / total, 1) : 0;
 	const urlClassName = label ? "truncate text-xs text-muted-foreground" : "truncate";
 
 	return (
 		<TableRow className="tabular-nums">
 			<TableCell className="max-w-0 pl-4">
-				<span className="flex min-w-0 flex-col">
-					{label && <span className="truncate font-medium">{label}</span>}
-					{/* Clicks only ever store web links; anything else stays text, never a link. */}
-					{normalizeLink(link.url) ? (
-						<a href={link.url} target="_blank" rel="noopener noreferrer nofollow" title={link.url} className={`${urlClassName} hover:underline`}>
-							{url}
-						</a>
+				<span className="flex min-w-0 items-center gap-2.5">
+					{webUrl ? (
+						<ImageFavicon domain={new URL(webUrl).hostname} size={16} />
 					) : (
-						<span title={link.url} className={urlClassName}>
-							{url}
-						</span>
+						<Globe className="size-4 shrink-0 text-muted-foreground" />
 					)}
+					<span className="flex min-w-0 flex-col">
+						{label && <span className="truncate font-medium">{label}</span>}
+						{/* Clicks only ever store web links; anything else stays text, never a link. */}
+						{webUrl ? (
+							<a href={link.url} target="_blank" rel="noopener noreferrer nofollow" title={link.url} className={`${urlClassName} hover:underline`}>
+								{url}
+							</a>
+						) : (
+							<span title={link.url} className={urlClassName}>
+								{url}
+							</span>
+						)}
+					</span>
 				</span>
 			</TableCell>
 			<TableCell className="text-right">{formatNumber(link.clickers)}</TableCell>

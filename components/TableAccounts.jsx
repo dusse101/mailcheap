@@ -1,5 +1,4 @@
 import BadgeStatus from "@/components/BadgeStatus";
-import IconWarmup from "@/components/IconWarmup";
 import MenuAccount from "@/components/MenuAccount";
 import TextEmpty from "@/components/TextEmpty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,7 +6,6 @@ import { describeBlocker, getAccountStatus, isBlocked } from "@/lib/account-stat
 import { LIMITS, isCloud } from "@/lib/config";
 import { formatCompact, formatDate, formatNumber } from "@/lib/format";
 import { getAccountLimits, getAccountPlan, getPlan, hasActiveFreePlan, isOnFreePlan } from "@/lib/plans";
-import { getWarmup } from "@/lib/send-spread";
 import { cn } from "@/lib/utils";
 
 // A box that scrolls under its header, so a long list stays short on the page.
@@ -34,7 +32,6 @@ export default function TableAccounts({ accounts, pinnedId }) {
 						const freePlan = hasActiveFreePlan(account) ? { plan: account.comp.plan, until: account.comp.until ?? null } : null;
 						const limits = getAccountLimits(account);
 						const hasOverrides = Object.values(account.limitOverrides ?? {}).some((value) => value !== undefined && value !== null);
-						const isSpreading = getWarmup(account) !== null;
 						const blockedBy = isBlocked(account) ? `Blocked by ${describeBlocker(account.pausedBy)}` : null;
 						return (
 							<TableRow key={account._id} data-state={account._id === pinnedId ? "selected" : undefined} className="tabular-nums">
@@ -44,14 +41,6 @@ export default function TableAccounts({ accounts, pinnedId }) {
 										<span className="block truncate text-xs text-red-600 dark:text-red-400" title={account.pauseReason}>
 											{blockedBy}
 											{account.pauseReason && `: ${account.pauseReason}`}
-										</span>
-									)}
-									{isSpreading && (
-										<span className="flex items-center gap-1 text-xs text-muted-foreground">
-											<IconWarmup className="size-3" />
-											<span className="truncate">
-												{account.spreadUntil ? `Warming up until ${formatDate(account.spreadUntil)}` : "Warms up from the first campaign"}
-											</span>
 										</span>
 									)}
 								</TableCell>
@@ -82,8 +71,6 @@ export default function TableAccounts({ accounts, pinnedId }) {
 										blockedBy={blockedBy}
 										blockReason={account.pauseReason ?? null}
 										hasLimits={hasPlans}
-										canSpread={hasPlans}
-										isSpreading={isSpreading}
 										canGiveFreePlan={hasPlans}
 										freePlan={freePlan}
 										overrides={account.limitOverrides ?? {}}

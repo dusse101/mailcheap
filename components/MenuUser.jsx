@@ -22,8 +22,9 @@ import { askToSignOut } from "@/lib/sign-out";
 import { cn } from "@/lib/utils";
 
 // The bottom of the sidebar and of the mobile menu: who's signed in and whether the account sends, with what
-// concerns the whole account rather than one newsletter. status: getSendingStatus (lib/account-state.js).
-export default function MenuUser({ name, email, image, status, hasBilling }) {
+// concerns the whole account rather than one newsletter. status: getSendingStatus (lib/account-state.js). items: the
+// MenuItems site extension's, under Billing.
+export default function MenuUser({ name, email, image, gravatarHash, status, hasBilling, items = null }) {
 	const [isSigningOut, startSigningOut] = useTransition();
 	const displayName = name?.trim() || email;
 
@@ -36,17 +37,17 @@ export default function MenuUser({ name, email, image, status, hasBilling }) {
 			<DropdownMenuTrigger asChild>
 				<button
 					type="button"
-					className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none transition-colors duration-150 hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:bg-muted"
+					className="flex w-full items-center gap-2.5 overflow-hidden rounded-lg p-1.5 text-left outline-none transition-colors duration-150 hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:bg-muted"
 				>
-					<AvatarUser name={name} email={email} image={image} size={32} />
-					<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+					<AvatarUser name={name} email={email} image={image} gravatarHash={gravatarHash} size={32} />
+					<span className="flex min-w-0 flex-1 flex-col gap-0.5 sidebar-label">
 						<span className="truncate text-sm leading-5 font-medium">{displayName}</span>
 						<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 							<span className={cn("size-1.5 shrink-0 rounded-full", TONES[status.tone])} />
 							<span className="truncate">{status.label}</span>
 						</span>
 					</span>
-					<ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+					<ChevronsUpDown className="size-4 shrink-0 text-muted-foreground sidebar-label" />
 				</button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-56">
@@ -70,6 +71,7 @@ export default function MenuUser({ name, email, image, status, hasBilling }) {
 						</Link>
 					</DropdownMenuItem>
 				)}
+				{items}
 				<DropdownMenuItem asChild>
 					<a href="/help" target="_blank" rel="noopener">
 						<CircleHelp />

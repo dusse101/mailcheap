@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import { countSegment, deleteSegment, getContactOptions, saveSegment } from "@/app/(app)/contacts/actions";
+import InputDate from "@/components/InputDate";
 import LinkHelp from "@/components/LinkHelp";
 import { Button } from "@/components/ui/button";
 import {
@@ -133,7 +134,7 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 			if (result?.error) return void toast.error(result.error);
 			toast.success(segment ? "Segment saved" : "Segment created");
 			onSaved(result.id);
-			if (!isPicking) router.push(`/contacts?segment=${result.id}`, { scroll: false });
+			if (!isPicking) router.push(`/contacts/segments/${result.id}`, { scroll: false });
 		});
 	}
 
@@ -144,7 +145,7 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 			if (result?.error) return void toast.error(result.error);
 			toast.success("Segment deleted");
 			onDeleted();
-			router.push("/contacts", { scroll: false });
+			router.replace("/contacts/segments", { scroll: false });
 		});
 	}
 
@@ -442,11 +443,25 @@ function InputValue({ type, op, value, unit, tags = [], isInvalid, onChange }) {
 		);
 	}
 
+	if (type === "date") {
+		return (
+			<InputDate
+				size="sm"
+				value={value ?? ""}
+				onChange={onChange}
+				isClearable={false}
+				aria-label="Date"
+				aria-invalid={isInvalid || undefined}
+				className="w-36 bg-background"
+			/>
+		);
+	}
+
 	return (
 		<label htmlFor={inputId} className="flex items-center gap-1.5 text-sm text-muted-foreground">
 			<input
 				id={inputId}
-				type={type === "date" ? "date" : type === "text" ? "text" : "number"}
+				type={type === "text" ? "text" : "number"}
 				min={type === "days" || type === "count" ? 1 : undefined}
 				step={type === "number" ? "any" : undefined}
 				inputMode={type === "days" || type === "count" ? "numeric" : type === "number" ? "decimal" : undefined}
@@ -458,7 +473,7 @@ function InputValue({ type, op, value, unit, tags = [], isInvalid, onChange }) {
 				className={cn(
 					inputClass,
 					"text-foreground tabular-nums",
-					type === "date" ? "w-36" : type === "text" ? "w-40" : type === "number" ? "w-24" : "w-16"
+					type === "text" ? "w-40" : type === "number" ? "w-24" : "w-16"
 				)}
 			/>
 			{unit}

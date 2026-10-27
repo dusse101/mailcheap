@@ -472,6 +472,42 @@ describe("contacts", () => {
 		assert.equal((await m.exportRoute.GET(new Request(forged))).status, 401);
 	});
 
+	test("a search finds any part of the address, where * stands for any characters, and the counts, the export and tags follow it", async () => {
+		const user = await customer("contacts-search@example.com");
+		const contact = (email, subscribedAt, status = "active") => ({
+			accountId: user.accountId,
+			newsletterId: user.newsletterId,
+			email,
+			status,
+			subscribedAt: new Date(subscribedAt),
+		});
+		await m.Contact.insertMany([
+			contact("jane@example.com", "2026-01-04"),
+			contact("mary-jane@example.org", "2026-01-03"),
+			contact("sam@example.org", "2026-01-02", "unsubscribed"),
+			contact("joe@example.net", "2026-01-01"),
+		]);
+		const search = async (text) => (await api(user.key, "GET", `/contacts?search=${encodeURIComponent(text)}`)).body;
+		const emails = async (text) => (await search(text)).contacts.map(({ email }) => email);
+
+		assert.deepEqual(await emails("@example.org"), ["mary-jane@example.org", "sam@example.org"], "everyone at a domain");
+		assert.deepEqual(await emails("*@Example.org"), ["mary-jane@example.org", "sam@example.org"]);
+		assert.deepEqual(await emails("jane"), ["jane@example.com", "mary-jane@example.org"], "anywhere in the address");
+		assert.deepEqual(await emails("jane*.org"), ["mary-jane@example.org"]);
+		assert.deepEqual(await emails("org*jane"), [], "in order");
+		assert.deepEqual(await emails("*"), ["jane@example.com", "mary-jane@example.org", "sam@example.org", "joe@example.net"]);
+		const { counts } = await search("*@example.org");
+		assert.deepEqual([counts.active, counts.unsubscribed], [1, 1]);
+
+		assert.equal((await api(user.key, "GET", `/contacts/export?search=${encodeURIComponent("*@example.org")}`)).body.count, 2);
+		const tagged = await api(user.key, "POST", "/contacts/tag", {
+			newsletter: user.newsletterId,
+			filter: { search: "*@example.org", status: "active" },
+			tags: ["org"],
+		});
+		assert.deepEqual(tagged.body, { matched: 1, changed: 1 });
+	});
+
 	test("signups from a site send the welcome email and answer browsers", async () => {
 		const user = await customer("signups-api@example.com");
 		await api(user.key, "PATCH", `/newsletters/${user.slug}`, { welcome: { enabled: true, subject: "Welcome", markdown: "Thanks." } });
@@ -563,7 +599,7 @@ describe("newsletters and images", () => {
 		const user = await customer("settings-api@example.com");
 		await api(user.key, "PATCH", `/newsletters/${user.slug}`, { welcome: { enabled: true, subject: "Hi", markdown: "Hello." } });
 		const updated = await api(user.key, "PATCH", `/newsletters/${user.newsletterId}`, { welcome: { subject: "Hello there" }, replyTo: "Me@Example.org" });
-		assert.deepEqual(updated.body.welcome, { enabled: true, subject: "Hello there", previewText: "", markdown: "Hello.", paused: false });
+		assert.deepEqual(updated.body.welcome, { enabled: true, subject: "Hello there", previewText: "", markdown: "Hello.", paused: false, review: null });
 		assert.equal(updated.body.replyTo, "me@example.org");
 		assert.equal(updated.body.postalAddress, "1 Main St, Paris");
 		assert.equal(updated.body.fromEmail, `hello@${user.slug}.mailcheapmail.com`);
@@ -575,7 +611,7 @@ describe("newsletters and images", () => {
 
 	test("a new newsletter starts with list cleanup on and the default numbers, unless it says false", async () => {
 		const user = await customer("cleanup-new@example.com");
-		const totals = { waiting: 0, kept: 0, dormant: 0 };
+		const totals = { waiting: 0, kept: 0, dormant: 0, noMailServer: 0, spamDomain: 0 };
 		const created = await api(user.key, "POST", "/newsletters", { name: "Cleaned up" });
 		assert.equal(created.status, 201);
 		assert.deepEqual(created.body.cleanup, { enabled: true, issues: 6, days: 180, ...totals });

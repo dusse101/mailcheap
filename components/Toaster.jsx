@@ -28,6 +28,11 @@ export default function Toaster() {
 									}}
 								>
 									{item.action.label}
+									{item.action.shortcut && (
+										<kbd className="ml-0.5 font-sans font-normal text-primary-foreground/60 [@media(pointer:coarse)]:hidden">
+											{item.action.shortcut}
+										</kbd>
+									)}
 								</Button>
 							)}
 						</>

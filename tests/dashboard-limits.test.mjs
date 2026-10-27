@@ -4,7 +4,8 @@ import { activate, as, callApi, catchRedirect, form, mockStripe, signIn, startTe
 import { flushAfter } from "./stubs/next-server.mjs";
 
 // The dashboard counts the API's hourly limits per account on what costs something each call: test emails and
-// sends, imports, uploads, domains and Stripe. Each account counts on its own, and its API keys count against it too.
+// sends, imports, uploads, domains, Stripe and the review step's tips. Each account counts on its own, and its API keys
+// count against it too.
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 let app;
 let m;
@@ -62,14 +63,19 @@ test("the dashboard counts the hourly limits of what costs something each call",
 			"change_plan",
 			"check_domain",
 			"check_newsletter_slug",
+			"check_website_domain",
+			"get_campaign_tips",
 			"import_contacts",
 			"open_billing_portal",
+			"preview_summary_email",
 			"resume_campaign",
 			"schedule_campaign",
 			"send_campaign",
 			"send_campaign_to_more",
+			"send_inbox_check_email",
 			"send_test_email",
 			"send_welcome_test_email",
+			"set_website_domain",
 			"upload_image",
 		]
 	);
@@ -85,6 +91,7 @@ test("the dashboard counts the hourly limits of what costs something each call",
 			"create_contact_field",
 			"create_segment",
 			"delete_contact",
+			"delete_contacts",
 			"duplicate_campaign",
 			"export_contacts",
 			"get_summary",

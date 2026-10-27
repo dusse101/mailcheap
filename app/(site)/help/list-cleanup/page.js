@@ -3,12 +3,14 @@ import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, LAST_CHANCE_DAYS, getCleanupDefaults } from "@/lib/cleanup";
 import { isCloud } from "@/lib/config";
+import { isSpamListEnabled } from "@/lib/domain-reputation";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 
 export const metadata = getHelpPageMetadata("list-cleanup");
 
 export default function ListCleanupPage() {
 	const cleanup = getCleanupDefaults();
+	const showSpamList = isCloud() || isSpamListEnabled();
 
 	return (
 		<ArticleHelp slug="list-cleanup">
@@ -47,6 +49,32 @@ export default function ListCleanupPage() {
 				When you send now, the send step counts what the cleanup will do: how many get the issue, how many get the last-chance email
 				instead, how many are still waiting to answer one and how many become dormant. A scheduled issue runs the cleanup when it
 				goes out. The campaign&apos;s report then shows the last-chance emails apart from the issue.
+			</p>
+
+			<h2 id="domains">{showSpamList ? "Spam domains and domains without mail" : "Domains that can\u2019t receive email"}</h2>
+			<p>
+				Apart from the cleanup, MailCheap checks in the background that the domains of your contacts can receive email, each domain
+				about once a month, for every newsletter, with nothing to turn on. A domain that no longer exists, or that has no mail
+				server, would make every email bounce. Once two checks a day apart agree, its contacts stop getting issues and show as
+				bounced, marked &ldquo;No mail server&rdquo;. Nothing was sent, so they don&apos;t count against your bounce rate. The domain
+				is checked again every week, and its contacts get your issues again as soon as it can receive email. A check DNS can&apos;t
+				answer never stops anyone.
+			</p>
+			{showSpamList && (
+				<p>
+					Contacts on a known spam domain, from StopForumSpam&apos;s list updated every day, stop the same way at once, marked
+					&ldquo;Spam domain&rdquo;, and signups and imports from those domains are left out. Contacts who ever opened or clicked
+					never stop for it, and neither do addresses at mailbox providers, internet providers or privacy relays like SimpleLogin.
+					They come back if the list drops their domain. Spam domain data from{" "}
+					<a href="https://www.stopforumspam.com" target="_blank" rel="noopener">
+						StopForumSpam.com
+					</a>
+					.
+				</p>
+			)}
+			<p>
+				The counts are in the <LinkApp href="/newsletters/cleanup">List cleanup section</LinkApp>. Signups and imports already leave
+				out addresses on these domains, and throwaway inboxes on imports.
 			</p>
 
 			<h2 id="settings">Settings</h2>

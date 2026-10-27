@@ -2,9 +2,10 @@ import { getHelpHref } from "@/lib/help";
 import { cn } from "@/lib/utils";
 
 // "Learn more" in the dashboard: an article of the help center (lib/help.js), in a new tab so the page stays as it was.
-export default function LinkHelp({ article, section, className, children = "Learn more" }) {
+export default function LinkHelp({ article, section, className, children = "Learn more", ...props }) {
 	return (
 		<a
+			{...props}
 			href={getHelpHref(article, section)}
 			target="_blank"
 			rel="noopener"

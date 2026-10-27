@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import { FIELD_TYPE_IDS } from "../lib/contact-fields.js";
 import { INTERVALS, PLAN_IDS } from "../lib/plans.js";
-import { SUMMARY_FREQUENCIES } from "../lib/summary.js";
 
 export const ACCOUNT_STATUSES = ["active", "paused"];
 export const BLOCK_SOURCES = ["admin", "rates", "campaign", "slice", "trap", "ses", "postshiba", "gmail"];
@@ -83,11 +82,9 @@ const accountSchema = new mongoose.Schema(
 			bounceRate: { type: Number },
 			complaintRate: { type: Number },
 		},
-		// The end of the account's 30-day warm-up, set by its first campaign: until then, a send can grow less over what
-		// the account proved before it's paced (lib/send-spread.js). An admin can end it early or start it again.
-		spreadUntil: { type: Date },
 		// What the account answered at /welcome (lib/onboarding.js): listSize picks the plan the paywall shows first.
-		// The overview's get-started list (lib/get-started.js) stays hidden once it's dismissed or finished.
+		// checklistDismissedAt and checklistFinishedAt are from before each newsletter had its own get-started panel
+		// (lib/get-started.js): nothing sets them now, and the panel stays hidden for the newsletters the account had then.
 		onboarding: {
 			listSize: { type: String, trim: true },
 			listSource: { type: String, trim: true },
@@ -100,13 +97,10 @@ const accountSchema = new mongoose.Schema(
 		changelog: {
 			seen: { type: [String], default: undefined },
 		},
-		// The summary email (lib/summary.js): its owner's choice (unset: weekly), the timezone it goes out in, saved from
-		// their browser by the dashboard, and the last one claimed, which a second delivery of its job doesn't send again.
+		// The timezone its newsletters' summary emails go out in (lib/summary.js), saved from its owner's browser by the
+		// dashboard. How often each one comes is the newsletter's (notifications.summary).
 		summary: {
-			frequency: { type: String, enum: SUMMARY_FREQUENCIES },
 			timeZone: { type: String },
-			lastSentKey: { type: String },
-			lastSentAt: { type: Date },
 		},
 		// The fields its contacts can hold besides a first name and tags, shared by its newsletters (lib/contact-fields.js).
 		// Each contact keeps its values under fields.<key>; deleting a field here leaves them on the contacts.

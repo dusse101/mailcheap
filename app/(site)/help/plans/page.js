@@ -1,10 +1,12 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
-import { TRIAL_CONTACTS } from "@/lib/actions/contacts";
+import { SIGNUPS_PER_KEY, TRIAL_CONTACTS } from "@/lib/actions/contacts";
+import { LIMITS } from "@/lib/config";
 import { formatNumber, formatUsd } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { PLANS, YEARLY_MONTHS } from "@/lib/plans";
+import { SIGNUP_FORM_RATE_LIMITS } from "@/lib/signup-form";
 
 export const metadata = getHelpPageMetadata("plans");
 
@@ -64,6 +66,35 @@ export default function PlansPage() {
 				</li>
 				<li>With more active contacts than your plan allows, sending waits until you upgrade.</li>
 			</ul>
+
+			<h2 id="signup-limits">Signup limits</h2>
+			<p>
+				So that a script or a leaked API key can&apos;t flood strangers&apos; inboxes, signups have limits that grow with your plan.
+				Past a newsletter&apos;s signup emails, people who sign up get no welcome or confirmation email until it slows down. Past the
+				others, new signups are refused for a while: API signups count each <LinkApp href="/api-keys">API key</LinkApp>, and the whole
+				account with AI assistants and contacts added by hand, and form signups come from a newsletter&apos;s{" "}
+				<LinkApp href="/newsletters/form">form for your site</LinkApp>. You get an email when one is reached.
+			</p>
+			<table>
+				<thead>
+					<tr>
+						<th>Plan</th>
+						<th>Signup emails every 10 minutes</th>
+						<th>API signups an hour</th>
+						<th>Form signups every 10 minutes</th>
+					</tr>
+				</thead>
+				<tbody>
+					{PLANS.map(({ id, name, signupScale }) => (
+						<tr key={id}>
+							<td>{name}</td>
+							<td>{formatNumber(LIMITS.welcomeEmailsPer10Minutes * signupScale)}</td>
+							<td>{formatNumber(SIGNUPS_PER_KEY.limit * signupScale)}</td>
+							<td>{formatNumber(SIGNUP_FORM_RATE_LIMITS.perNewsletter.limit * signupScale)}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
 
 			<h2 id="without-a-plan">Without a plan</h2>
 			<p>

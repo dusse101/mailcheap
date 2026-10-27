@@ -48,15 +48,15 @@ describe("first-name merge tags", () => {
 		assert.equal(fillMergeTags("<p>Hi {{first_name|Tom &amp; Jerry}}</p>", { isHtml: true }), "<p>Hi Tom &amp; Jerry</p>", "the editor's HTML text stays as it was");
 		assert.equal(withMergeFallbacks("<p>{{first_name|<b>you</b>}}</p>", { isHtml: true }), "<p>&lt;b&gt;you&lt;/b&gt;</p>");
 		assert.equal(withMergeFallbacks("Hi {{first_name|<b>you</b>}}"), "Hi <b>you</b>", "plain text keeps it as typed");
-		assert.equal(fillSubject("Hi {{first_name|there}}", "Jane\r\nBcc: x@example.com"), "Hi Jane Bcc: x@example.com", "a subject stays on one line");
+		assert.equal(fillSubject("Hi {{first_name|there}}", { firstName: "Jane\r\nBcc: x@example.com" }), "Hi Jane Bcc: x@example.com", "a subject stays on one line");
 		assert.equal(withMergeFallbacks("Hi {{first_name|friend}} and {{first_name}}"), "Hi friend and ");
 		assert.equal(fillSampleName("Hi {{first_name|there}}"), "Hi Jane");
 		assert.equal(firstNameTag(), "{{first_name|there}}");
 	});
 
 	test("anything else in double braces is pointed out, since it would go out as written", () => {
-		assert.deepEqual(findBrokenMergeTags("Hi {{first_name|there}}", "<p>{{ first_name }}</p>"), []);
-		assert.deepEqual(findBrokenMergeTags("Hi {{firstname}}", "<p>{{<strong>first_name</strong>}}</p>", "{{ subscriber.name }}", "{{firstname}}"), [
+		assert.deepEqual(findBrokenMergeTags(["Hi {{first_name|there}}", "<p>{{ first_name }}</p>"]), []);
+		assert.deepEqual(findBrokenMergeTags(["Hi {{firstname}}", "<p>{{<strong>first_name</strong>}}</p>", "{{ subscriber.name }}", "{{firstname}}"]), [
 			"{{firstname}}",
 			"{{<strong>first_name</strong>}}",
 			"{{ subscriber.name }}",

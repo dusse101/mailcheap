@@ -7,21 +7,28 @@ import { notifyActivity } from "@/lib/alerts";
 import { SIGNIN_NOT_ALLOWED_MESSAGE, SIGNUP_ERRORS, getAuth, getAuthCallContext, getSignupError, isGoogleEnabled, sendSigninCodeEmail } from "@/lib/auth";
 import { isBotRequest } from "@/lib/bot-check";
 import { isCloud, isEmailAllowed } from "@/lib/config";
-import { isDisposableDomain } from "@/lib/disposable-domains";
+import { getDomainLists } from "@/lib/domain-lists";
+import { classifyDomain } from "@/lib/domain-reputation";
 import { getCanonicalEmail } from "@/lib/email-aliases";
+import { getEmailSuggestion } from "@/lib/email-typos";
+import { findDomainsWithoutMail } from "@/lib/mail-domains";
 import { isExpiredOAuthQuery, readOAuthQueryField } from "@/lib/oauth-rules";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import { normalizeEmail, toSafeNextPath } from "@/lib/validation";
 
 const CODES_PER_IP = { name: "signin-code-ip", limit: 10, window: "15 m" };
 const CODES_PER_EMAIL = { name: "signin-code-email", limit: 5, window: "15 m" };
+// A script that waits out the limits above still can't mail one inbox all day.
+const DAILY_CODES_PER_IP = { name: "signin-code-ip-day", limit: 30, window: "1 d" };
+const DAILY_CODES_PER_EMAIL = { name: "signin-code-email-day", limit: 10, window: "1 d" };
 // Each code also dies after 3 wrong tries (Better Auth's emailOTP).
 const CHECKS_PER_IP = { name: "signin-check-ip", limit: 30, window: "15 m" };
 const CODE_PATTERN = /^\d{6}$/;
 const CODE_FAILED_MESSAGE = "Couldn't send the code. Try again in a minute.";
 const OAUTH_EXPIRED_MESSAGE = "This sign-in link expired. Go back to the app and connect MailCheap again.";
 
-// The allowlist is checked after the rate limits, so the form can't be used to test addresses quickly.
+// The allowlist and the address's checks come after the rate limits, so the form can't be used to test addresses
+// quickly.
 export async function sendSigninCode(_state, formData) {
 	const email = normalizeEmail(formData.get("email"));
 	if (!email) return { error: "Enter a valid email" };
@@ -34,11 +41,12 @@ export async function sendSigninCode(_state, formData) {
 	if ((await isRateLimited({ ...CODES_PER_IP, key: ip })) || (await isRateLimited({ ...CODES_PER_EMAIL, key: inbox }))) {
 		return { error: "Too many codes. Try again in 15 minutes." };
 	}
-	if (!isEmailAllowed(email)) return { error: SIGNIN_NOT_ALLOWED_MESSAGE };
-	// No code to a throwaway inbox that can't sign up anyway; one that has an account from before still signs in.
-	if (isCloud() && isDisposableDomain(email.split("@")[1]) && !(await findUserByEmail(email))) {
-		return { error: SIGNUP_ERRORS.email_disposable };
+	if ((await isRateLimited({ ...DAILY_CODES_PER_IP, key: ip })) || (await isRateLimited({ ...DAILY_CODES_PER_EMAIL, key: inbox }))) {
+		return { error: "Too many codes today. Try again tomorrow." };
 	}
+	if (!isEmailAllowed(email)) return { error: SIGNIN_NOT_ALLOWED_MESSAGE };
+	const problem = isCloud() && (await getAddressProblem(email));
+	if (problem) return problem;
 	try {
 		await sendSigninCodeEmail(email);
 	} catch (error) {
@@ -46,6 +54,18 @@ export async function sendSigninCode(_state, formData) {
 		return { error: CODE_FAILED_MESSAGE };
 	}
 	return { email };
+}
+
+// MailCheap Cloud takes anyone, and codes that bounce cost the reputation every later code goes out on; a self-hosted
+// server's allowlist already decides who gets one. value: what the email field shows again, to fix.
+async function getAddressProblem(email) {
+	const suggestion = getEmailSuggestion(email);
+	if (suggestion) return { error: `Did you mean ${suggestion}?`, value: suggestion };
+	const domain = email.split("@")[1];
+	// No code to a throwaway inbox that can't sign up anyway; one that has an account from before still signs in.
+	if (classifyDomain(domain, await getDomainLists()) && !(await findUserByEmail(email))) return { error: SIGNUP_ERRORS.email_disposable };
+	if ((await findDomainsWithoutMail([domain])).size > 0) return { error: "This email's domain can't receive email", value: email };
+	return null;
 }
 
 // The first sign-in creates the user, and the user's account with it (lib/auth.js). With an app's

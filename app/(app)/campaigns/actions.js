@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { runDashboardAction, toFormError } from "@/lib/actions/dashboard";
+import { gravatarHash } from "@/lib/gravatar";
 
 const MAX_SUBJECT_LENGTH = 200;
 const MAX_PREVIEW_TEXT_LENGTH = 300;
@@ -46,25 +47,59 @@ export async function setCampaignSegment(id, segmentId) {
 	return { ok: true };
 }
 
+// Where the draft goes: both, email or web (lib/publish-to.js). Saved right away, like its segment.
+export async function setCampaignPublishTo(id, publishTo) {
+	const { failure } = await runDashboardAction("update_campaign", { id: String(id), publishTo: String(publishTo ?? "") });
+	if (failure) return toFormError(failure);
+	revalidatePath(`/campaigns/${id}`);
+	return { ok: true };
+}
+
+// The preview's reader picker: the newsletter's active contacts with what's typed in their address or first name, the
+// newest before anything is, each with its field values, which the preview fills in, and the hash its picture comes
+// from (AvatarContact).
+export async function findPreviewContacts(newsletterId, query) {
+	const { output, failure } = await runDashboardAction("search_contacts", {
+		newsletter: String(newsletterId ?? ""),
+		query: String(query ?? "").slice(0, 100),
+		status: "active",
+		limit: 8,
+	});
+	if (failure) return toFormError(failure);
+	return {
+		contacts: output.contacts.map(({ id, email, firstName, fields }) => ({ id, email, firstName, fields, gravatarHash: gravatarHash(email) })),
+	};
+}
+
 export async function sendTestCampaign(id) {
 	const { failure } = await runDashboardAction("send_test_email", { id: String(id) });
 	revalidatePath(`/campaigns/${id}`);
 	return failure ? toFormError(failure) : { ok: true };
 }
 
-export async function sendCampaign(id, { audienceLimit } = {}) {
-	const { failure } = await runDashboardAction("send_campaign", { id: String(id), audienceLimit: readCount(audienceLimit) });
+// held: paused as it starts, which only the content check does (lib/content-review.js), so nothing went out yet.
+// checkTips: stop first when the check has tips (tips), so nothing went out either.
+export async function sendCampaign(id, { audienceLimit, checkTips = false } = {}) {
+	const { output, failure } = await runDashboardAction("send_campaign", {
+		id: String(id),
+		audienceLimit: readCount(audienceLimit),
+		checkTips: checkTips === true,
+	});
+	if (output?.tips) return { ok: true, tips: output.tips };
 	refresh(id);
-	return failure ? toFormError(failure) : { ok: true };
+	if (failure) return toFormError(failure);
+	return output?.status === "paused" ? { ok: true, held: true } : { ok: true };
 }
 
-export async function scheduleCampaign(id, { scheduledAt, audienceLimit } = {}) {
-	const { failure } = await runDashboardAction("schedule_campaign", {
+export async function scheduleCampaign(id, { scheduledAt, audienceLimit, checkTips = false } = {}) {
+	const { output, failure } = await runDashboardAction("schedule_campaign", {
 		id: String(id),
 		scheduledAt: String(scheduledAt ?? ""),
 		audienceLimit: readCount(audienceLimit),
+		checkTips: checkTips === true,
 	});
 	if (failure) return toFormError(failure);
+	if (output.tips) return { ok: true, tips: output.tips };
 	refresh(id);
 	return { ok: true };
 }
@@ -125,6 +160,16 @@ export async function discardCampaign(id) {
 	revalidatePath("/");
 	revalidatePath("/campaigns");
 	return { ok: true };
+}
+
+// deleted: a web-only issue left the campaigns too, so its own page isn't refreshed while the dialog leaves it.
+export async function unpublishCampaign(id) {
+	const { output, failure } = await runDashboardAction("unpublish_campaign", { id: String(id) });
+	if (failure) return toFormError(failure);
+	revalidatePath("/");
+	revalidatePath("/campaigns");
+	if (!output.deleted) revalidatePath(`/campaigns/${id}`);
+	return { ok: true, deleted: output.deleted };
 }
 
 // The page lives at /p/<slug> once the issue goes out. A draft without one gets the subject's slug then.

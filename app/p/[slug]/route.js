@@ -2,6 +2,7 @@ import { getArchiveNewsletter } from "@/lib/archive-data";
 import { getArchiveUrls } from "@/lib/archive-hosts";
 import { connectDb } from "@/lib/db";
 import { findNewsletterAnywhere } from "@/lib/public-newsletters";
+import { WEB_FILTER } from "@/lib/publish-to";
 import Campaign from "@/models/Campaign";
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,119}$/;
@@ -13,7 +14,7 @@ export async function GET(request, { params }) {
 	if (!SLUG_PATTERN.test(slug)) return new Response("Not found", { status: 404 });
 
 	await connectDb();
-	const campaign = await Campaign.findOne({ archiveSlug: slug })
+	const campaign = await Campaign.findOne({ archiveSlug: slug, ...WEB_FILTER })
 		.setOptions({ crossAccount: true })
 		.select("accountId newsletterId")
 		.lean();

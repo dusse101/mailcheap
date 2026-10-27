@@ -3,6 +3,7 @@ import { after, before, describe, test } from "node:test";
 import mongoose from "mongoose";
 import { getAliasPattern, getCanonicalEmail } from "../lib/email-aliases.js";
 import { as, catchRedirect, form, platformEmails, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
+import { domainsUnknown, domainsWithoutMail } from "./stubs/mail-domains.mjs";
 
 test("an address's inbox: Gmail ignores dots and +tags, these providers +tags, Yahoo -tags", () => {
 	assert.equal(getCanonicalEmail("Jane.Doe+news@googlemail.com"), "janedoe@gmail.com");
@@ -51,7 +52,9 @@ describe("sign-ups on MailCheap Cloud", () => {
 		m = {
 			auth: await import("../lib/auth.js"),
 			signin: await import("../app/signin/actions.js"),
+			lists: await import("../lib/domain-lists.js"),
 			Account: (await import("../models/Account.js")).default,
+			DomainList: (await import("../models/DomainList.js")).default,
 		};
 	});
 
@@ -102,6 +105,58 @@ describe("sign-ups on MailCheap Cloud", () => {
 		assert.ok(await signIn("old@yopmail.com"));
 	});
 
+	test("the downloaded throwaway and spam domains get no code and no account, Google sign-ups included; privacy relays sign up", async () => {
+		await m.DomainList.create([
+			{ _id: "disposable", domains: ["fresh-throwaway.example"], count: 1 },
+			{ _id: "spam", domains: ["spammy.example"], count: 1 },
+		]);
+		try {
+			await withEnv({ STOPFORUMSPAM_COMMERCIAL_OK: "1" }, async () => {
+				m.lists.clearDomainListCache();
+				const emailsBefore = platformEmails.length;
+				for (const email of ["burner@fresh-throwaway.example", "burner@box.fresh-throwaway.example", "bot@spammy.example"]) {
+					assert.deepEqual(await signUp(email), { error: m.auth.SIGNUP_ERRORS.email_disposable }, email);
+				}
+				assert.equal(platformEmails.length, emailsBefore, "no code went out");
+				const context = await (await m.auth.getAuth()).$context;
+				await assert.rejects(
+					context.internalAdapter.createUser({ email: "google@fresh-throwaway.example", emailVerified: true, name: "" }),
+					(error) => error.body?.code === "email_disposable"
+				);
+				assert.deepEqual(await signUp("jane@33mail.com"), { redirectedTo: "/" }, "an address its owner keeps, unlike a throwaway one");
+			});
+		} finally {
+			await m.DomainList.deleteMany({ _id: { $in: ["disposable", "spam"] } });
+			m.lists.clearDomainListCache();
+		}
+	});
+
+	test("a misspelled address gets back the one it was meant to be, and no code", async () => {
+		const emailsBefore = platformEmails.length;
+		assert.deepEqual(await signUp("jane.doe@gmail.co"), { error: "Did you mean jane.doe@gmail.com?", value: "jane.doe@gmail.com" });
+		assert.deepEqual(await signUp("sam@acme.con"), { error: "Did you mean sam@acme.com?", value: "sam@acme.com" });
+		assert.equal(platformEmails.length, emailsBefore, "no code went out");
+	});
+
+	test("a domain that can't receive email gets no code, account or not; DNS that doesn't answer stops none", async () => {
+		domainsWithoutMail.add("closed.example");
+		domainsUnknown.add("silent.example");
+		try {
+			const emailsBefore = platformEmails.length;
+			const refused = { error: "This email's domain can't receive email", value: "jo@closed.example" };
+			assert.deepEqual(await signUp("jo@closed.example"), refused);
+			const now = new Date();
+			const { insertedId } = await users().insertOne({ email: "old@closed.example", emailVerified: true, name: "", createdAt: now, updatedAt: now });
+			await m.Account.create({ ownerId: insertedId });
+			assert.equal((await signUp("old@closed.example")).error, refused.error, "its code would bounce all the same");
+			assert.equal(platformEmails.length, emailsBefore, "no code went out");
+			assert.deepEqual(await signUp("jo@silent.example"), { redirectedTo: "/" });
+		} finally {
+			domainsWithoutMail.delete("closed.example");
+			domainsUnknown.delete("silent.example");
+		}
+	});
+
 	test("3 new accounts a day per network; people who have one still sign in from there", async () => {
 		const network = (email) => ({ email, jar: new Map(), ip: "203.0.113.250" });
 		for (const email of ["office1@example.com", "office2@example.com", "office3@example.com"]) {
@@ -135,8 +190,14 @@ describe("sign-ups on MailCheap Cloud", () => {
 	});
 
 	test("self-hosted servers decide with their allowlist alone", async () => {
-		await withEnv({ MAILCHEAP_CLOUD: "", ALLOWED_EMAILS: "@gmail.com", EMAIL_FROM: "MailCheap <login@mail.example.com>" }, async () => {
+		await withEnv({ MAILCHEAP_CLOUD: "", ALLOWED_EMAILS: "@gmail.com,@intranet.example", EMAIL_FROM: "MailCheap <login@mail.example.com>" }, async () => {
 			assert.ok(await signIn("jane.doe+selfhosted@gmail.com"));
+			domainsWithoutMail.add("intranet.example");
+			try {
+				assert.ok(await signIn("admin@intranet.example"), "no lookup for an address its admin allowed");
+			} finally {
+				domainsWithoutMail.delete("intranet.example");
+			}
 		});
 	});
 });

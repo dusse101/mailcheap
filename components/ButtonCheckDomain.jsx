@@ -6,15 +6,15 @@ import { checkDomainAction } from "@/app/(app)/domains/actions";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
 
-// hasArchiveHost: the server hosts archives on customers' subdomains, so the archive subdomain's record counts too.
-export default function ButtonCheckDomain({ id, hasArchiveHost }) {
+export default function ButtonCheckDomain({ id }) {
 	const [isChecking, startChecking] = useTransition();
 
 	function check() {
 		startChecking(async () => {
 			const result = await checkDomainAction(id);
 			if (result?.error) return void toast.error(result.error);
-			if (result.verified && (result.archiveHostVerified || !hasArchiveHost)) toast.success("Everything is in place");
+			if (result.problem) toast.error(result.problem);
+			else if (result.verified) toast.success("Everything is in place");
 			else toast.message("Some records aren't there yet. DNS changes can take up to a few hours.");
 		});
 	}

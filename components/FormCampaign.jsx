@@ -8,25 +8,29 @@ import {
 	CalendarClock,
 	ChevronLeft,
 	CircleAlert,
-	CircleX,
 	Copy,
 	Eye,
 	FlaskConical,
+	Globe,
 	Loader2,
 	MoreHorizontal,
 	Send,
 	Trash2,
 	UserRound,
 } from "lucide-react";
-import { duplicateCampaign, saveCampaign, sendTestCampaign } from "@/app/(app)/campaigns/actions";
+import { duplicateCampaign, saveCampaign, sendTestCampaign, setCampaignPublishTo } from "@/app/(app)/campaigns/actions";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
 import BadgeStatus from "@/components/BadgeStatus";
 import CardSettings from "@/components/CardSettings";
+import CardTips from "@/components/CardTips";
 import DialogDiscardCampaign from "@/components/DialogDiscardCampaign";
 import DialogPreviewEmail from "@/components/DialogPreviewEmail";
 import EditorRich from "@/components/EditorRich";
+import IconField from "@/components/IconField";
+import LinkHelpFields from "@/components/LinkHelpFields";
 import ListChecks from "@/components/ListChecks";
 import NavSteps from "@/components/NavSteps";
+import NoticeSendProblems, { ListSendProblems } from "@/components/NoticeSendProblems";
 import PanelSend from "@/components/PanelSend";
 import RowCampaign from "@/components/RowCampaign";
 import StatusSaved from "@/components/StatusSaved";
@@ -35,17 +39,22 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { getCheckFix } from "@/lib/campaign-steps";
+import { getCheckFix, getTipFix } from "@/lib/campaign-steps";
+import { toPreviewFrame } from "@/lib/email-preview";
+import { formatCount } from "@/lib/format";
 import { markdownToHtml } from "@/lib/markdown";
-import { fillSampleName, firstNameTag } from "@/lib/merge-tags";
-import { getPresendChecks } from "@/lib/presend-checks";
-import { UNSUBSCRIBE_PLACEHOLDER, renderEmail, withResponsiveImages } from "@/lib/render-email";
+import { fieldTag, firstNameTag } from "@/lib/merge-tags";
+import { getContentWarnings, getPresendChecks } from "@/lib/presend-checks";
+import { readPublishTo } from "@/lib/publish-to";
+import { renderEmail } from "@/lib/render-email";
 import { SEGMENT_DELETED } from "@/lib/segments";
 import { toast } from "@/lib/toast";
+import { useCollapsedSidebar } from "@/lib/use-collapsed-sidebar";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { usePaywall } from "@/lib/use-paywall";
 import { useSendCampaign } from "@/lib/use-send-campaign";
@@ -64,8 +73,11 @@ export default function FormCampaign({
 	audienceCount,
 	everyoneCount,
 	segments,
+	contactFields = [],
 	isSegmentDeleted,
 	senderProblem,
+	isSharedSender = false,
+	domainNudge = null,
 	isSendingEnabled,
 	testEmail,
 	sendTimes,
@@ -74,6 +86,8 @@ export default function FormCampaign({
 	emailsLeft,
 	pace,
 	newContacts,
+	gmailShare = 0,
+	tips: storedTips = [],
 }) {
 	const isHtml = campaign.format === "html";
 	const [step, setStep] = useState("write");
@@ -90,17 +104,27 @@ export default function FormCampaign({
 	});
 	const save = useCallback((snapshot) => saveCampaign(campaign._id, { ...snapshot, format }), [campaign._id, format]);
 	const { isDirty, isSaving, savedAt, error, flush } = useAutosave(values, save);
+	// The content check's tips for the draft as it is: the page's, or those a send or a schedule stopped for. A change
+	// hides them, and the next send or schedule checks again.
+	const [knownTips, setKnownTips] = useState(() => ({ values, list: storedTips }));
+	useCollapsedSidebar();
 	const [isTesting, startTesting] = useTransition();
 	const [isWorking, startWorking] = useTransition();
+	const [publishTo, setPublishTo] = useState(() => readPublishTo(campaign));
+	const [isChangingPublishTo, startChangingPublishTo] = useTransition();
+	const isWebOnly = publishTo === "web";
 	const toastError = useToastError();
 	const paywall = usePaywall();
 	const hasPlan = paywall?.hasPlan ?? true;
 	const deferredValues = useDeferredValue(values);
-	const isUploading = values.body.includes('src="blob:');
+	// The editor's own pictures: an HTML block's code is text.
+	const isUploading = /<img\b[^>]*\ssrc="blob:/.test(values.body);
 	const scheduledAt = campaign.status === "scheduled" ? campaign.scheduledAt : null;
 	const isCompact = useMediaQuery(COMPACT_SCREEN);
 	const rootRef = useRef(null);
+	const editorRef = useRef(null);
 	const subjectRef = useRef(null);
+	const subjectSelectionRef = useRef(null);
 	const previewTextRef = useRef(null);
 	const previewOpenerRef = useRef(null);
 	const scrollsRef = useRef({});
@@ -122,24 +146,27 @@ export default function FormCampaign({
 			}),
 		[format, deferredValues, newsletter]
 	);
-	const previewHtml = useMemo(
-		() => withResponsiveImages(fillSampleName(rendered.html.replaceAll(UNSUBSCRIBE_PLACEHOLDER, "#"), { isHtml: true })),
-		[rendered.html]
+	const previewHtml = useMemo(() => toPreviewFrame(rendered.html), [rendered.html]);
+	// A long issue takes a few milliseconds to read, so it's read apart from typing.
+	const contentWarnings = useMemo(
+		() => getContentWarnings({ ...deferredValues, format, contactFields }),
+		[deferredValues, format, contactFields]
 	);
 	const { checks } = getPresendChecks({
-		campaign: { ...campaign, ...values },
+		campaign: { ...campaign, ...values, publishTo },
 		newsletter,
 		rendered,
+		contactFields,
 		senderProblem,
+		isSharedSender,
 		isSendingEnabled,
 		planProblem,
+		contentWarnings,
 	});
 	const reviewChecks = checks.map((check) => ({ ...check, fix: getCheckFix(check, { newsletterId: newsletter._id }) }));
-	// Without a plan, Send and Schedule open the paywall first, and the checks wait until there's one.
-	const accountProblems = hasPlan ? reviewChecks.filter(({ isAccount, isOk }) => isAccount && !isOk) : [];
 	const blocking = [
 		...(isUploading ? [{ id: "uploading", message: UPLOADING_MESSAGE }] : []),
-		...(isSegmentDeleted ? [{ id: "segment", message: SEGMENT_DELETED }] : []),
+		...(isSegmentDeleted && !isWebOnly ? [{ id: "segment", message: SEGMENT_DELETED }] : []),
 		...reviewChecks.filter(({ isOk, isWarning }) => !isOk && !isWarning),
 	];
 	const sending = useSendCampaign({
@@ -152,9 +179,32 @@ export default function FormCampaign({
 		sendTimes,
 		blocking,
 		hasPlan,
+		isWebOnly,
 		onBeforeSend: persist,
+		onTips: (list) => setKnownTips({ values, list }),
 	});
+	// A web-only issue goes to no inbox.
+	const tips = knownTips.values === values && !isWebOnly ? knownTips.list : [];
+	// The account's doing rather than the email's, so above the review and send steps instead of in the checklist; the
+	// send step adds the plan's emails a send now would go over. Without a plan, Send and Schedule open the paywall
+	// first, and the checks wait until there's one.
+	const accountProblems = hasPlan ? (step === "send" ? sending.problems : blocking).filter(({ isAccount }) => isAccount) : [];
 	const isTestDisabled = hasPlan && !isSendingEnabled;
+
+	// Saved right away, like the segment: the send step and the checks follow it.
+	function changePublishTo(next) {
+		const previous = publishTo;
+		if (next === previous) return;
+		setPublishTo(next);
+		startChangingPublishTo(async () => {
+			const result = await setCampaignPublishTo(campaign._id, next);
+			if (result?.error) {
+				setPublishTo(previous);
+				return void toast.error(result.error);
+			}
+			if (previous === "web") sending.prepare();
+		});
+	}
 
 	function sendTest() {
 		if (!hasPlan) return paywall.open("test");
@@ -183,8 +233,10 @@ export default function FormCampaign({
 		window.scrollTo({ top: scrollsRef.current[next] ?? 0 });
 	}
 
-	function editField(field) {
+	// words: a tip's or a warning's, selected where the field has them as they are, so typing replaces them.
+	function editField(field, words) {
 		goToStep("write");
+		if (field === "body" && words && editorRef.current?.select(words)) return;
 		const target =
 			field === "subject"
 				? subjectRef.current
@@ -193,6 +245,8 @@ export default function FormCampaign({
 					: rootRef.current?.querySelector('[aria-label="Content"]');
 		target?.focus({ preventScroll: true });
 		target?.scrollIntoView({ block: "center" });
+		const start = words && typeof target?.value === "string" ? target.value.toLowerCase().indexOf(words.toLowerCase()) : -1;
+		if (start >= 0) target.setSelectionRange(start, start + words.length);
 	}
 
 	// opener: what gets the focus back once the preview closes.
@@ -232,14 +286,13 @@ export default function FormCampaign({
 		return (event) => setValues((current) => ({ ...current, [key]: event.target.value }));
 	}
 
-	// {{first_name|there}} where the cursor is in the subject, or at its end (lib/merge-tags.js). The button keeps the
-	// focus in the subject, so its cursor is still there.
-	function insertFirstName() {
+	// A merge tag (lib/merge-tags.js) where the cursor last was in the subject, or at its end if it never was there: the
+	// fields' menu takes the focus, so the subject's selection is kept as it changes.
+	function insertTag(tag) {
 		const input = subjectRef.current;
-		const tag = firstNameTag();
-		const isTyping = document.activeElement === input;
-		const start = isTyping ? input.selectionStart : input.value.length;
-		const end = isTyping ? input.selectionEnd : start;
+		const [start, end] = (subjectSelectionRef.current ?? [input.value.length, input.value.length]).map((index) =>
+			Math.min(index, input.value.length)
+		);
 		const subject = `${input.value.slice(0, start)}${tag}${input.value.slice(end)}`.slice(0, SUBJECT_MAX);
 		setValues((current) => ({ ...current, subject }));
 		requestAnimationFrame(() => {
@@ -252,7 +305,13 @@ export default function FormCampaign({
 
 	const sendAction =
 		sending.choice === "now"
-			? { label: "Send now", icon: Send, reason: "send", title: "Before you send", run: () => sending.setIsConfirmOpen(true) }
+			? {
+					label: isWebOnly ? "Publish now" : "Send now",
+					icon: isWebOnly ? Globe : Send,
+					reason: "send",
+					title: isWebOnly ? "Before you publish" : "Before you send",
+					run: () => sending.setIsConfirmOpen(true),
+				}
 			: { label: "Schedule", icon: CalendarClock, reason: "schedule", title: "Before you schedule", run: sending.schedule };
 	const action = {
 		write: { label: "Next: review", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("review") },
@@ -267,20 +326,24 @@ export default function FormCampaign({
 		},
 	}[step];
 
-	// Saved shows for a moment after each save, first in every step so a step change doesn't replay it.
+	// Saved shows for a moment after each save, first in every step so a step change doesn't replay it. In the top bar its
+	// place stays taken: where the bar is tight, the steps would shift each time it shows.
 	function renderStatus() {
 		if (error) return <ButtonRetrySave error={error} onRetry={flush} />;
-		const saved = <StatusSaved savedAt={savedAt} />;
+		const saved = (
+			<span className="lg:flex lg:min-w-14 lg:justify-end">
+				<StatusSaved savedAt={savedAt} />
+			</span>
+		);
 		if (step !== "write") return saved;
 		return (
 			<>
 				{saved}
 				<Button
-					variant="ghost"
-					size="sm"
+					variant="outline"
 					onClick={(event) => openPreview(event.currentTarget)}
 					aria-label="Preview"
-					className="text-muted-foreground max-sm:px-2"
+					className="max-sm:w-9 max-sm:px-0"
 				>
 					<Eye data-icon="inline-start" />
 					<span className="max-sm:sr-only">Preview</span>
@@ -309,7 +372,7 @@ export default function FormCampaign({
 				{title}
 				{menu}
 			</div>
-			<header className="sticky top-[calc(var(--plan-bar-height)+3.5rem)] z-20 -mx-4 mb-6 border-b border-border/60 bg-background/80 px-4 py-2 backdrop-blur-md md:top-(--plan-bar-height) md:-mx-10 md:px-10 lg:-mt-10 lg:mb-8 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-6 lg:border-b-0 lg:py-0">
+			<header className="sticky top-[calc(var(--plan-bar-height)+3.5rem)] z-20 -mx-4 mb-6 border-b border-border/60 bg-background/80 px-4 py-2 backdrop-blur-md md:top-(--plan-bar-height) md:-mx-10 md:px-10 lg:-mt-10 lg:mb-8 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] lg:items-center lg:gap-6 lg:border-b-0 lg:py-0">
 				<div className="hidden min-w-0 lg:flex">{title}</div>
 				<NavSteps step={step} onStep={goToStep} />
 				<div className="hidden min-w-0 items-center justify-end gap-2 lg:flex">
@@ -319,7 +382,13 @@ export default function FormCampaign({
 			</header>
 
 			<div className="mx-auto w-full max-w-2xl">
-				{step !== "write" && accountProblems.length > 0 && <NoticeAccountProblems problems={accountProblems} />}
+				{step !== "write" && accountProblems.length > 0 && (
+					<NoticeSendProblems
+						problems={accountProblems}
+						renderFix={({ fix }) => fix && <ButtonFix fix={fix} onEdit={editField} />}
+						className="mb-6 animate-enter"
+					/>
+				)}
 
 				<section aria-label="Write" hidden={step !== "write"}>
 					<div className="overflow-hidden rounded-xl bg-card shadow-border animate-enter">
@@ -330,23 +399,13 @@ export default function FormCampaign({
 										ref={subjectRef}
 										value={values.subject}
 										onChange={update("subject")}
+										onSelect={(event) => (subjectSelectionRef.current = [event.target.selectionStart, event.target.selectionEnd])}
 										placeholder="Subject"
 										aria-label="Subject"
 										maxLength={SUBJECT_MAX}
 										className="h-11 w-full min-w-0 bg-transparent text-sm font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground"
 									/>
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon-sm"
-										onMouseDown={(event) => event.preventDefault()}
-										onClick={insertFirstName}
-										aria-label="Insert first name"
-										title="Insert first name"
-										className="-mr-2 shrink-0 text-muted-foreground"
-									>
-										<UserRound />
-									</Button>
+									<ButtonInsertTag contactFields={contactFields} onInsert={insertTag} />
 								</div>
 							</RowCampaign>
 							<RowCampaign label="Preview text">
@@ -374,7 +433,13 @@ export default function FormCampaign({
 								/>
 							</div>
 						) : (
-							<EditorRich content={initialBody} onChange={updateBody} />
+							<EditorRich
+								ref={editorRef}
+								content={initialBody}
+								onChange={updateBody}
+								contactFields={contactFields}
+								newsletter={newsletter}
+							/>
 						)}
 					</div>
 				</section>
@@ -394,6 +459,10 @@ export default function FormCampaign({
 							)
 						}
 					/>
+					{tips.length > 0 && <CardTips tips={tips} renderFix={(tip) => <ButtonFix fix={getTipFix(tip)} onEdit={editField} />} />}
+					<p role="status" className="sr-only">
+						{tips.length > 0 ? `${formatCount(tips.length, "tip")} for more opens` : ""}
+					</p>
 					<CardSettings title="Test and preview" stagger={1}>
 						<ButtonRow
 							icon={FlaskConical}
@@ -421,10 +490,17 @@ export default function FormCampaign({
 						everyoneCount={everyoneCount}
 						segments={segments}
 						isSegmentDeleted={isSegmentDeleted}
-						emailsLeft={emailsLeft}
 						pace={pace}
 						newContacts={newContacts}
+						gmailShare={gmailShare}
+						isSharedSender={isSharedSender}
 						archiveUrlBase={archiveUrlBase}
+						publishTo={publishTo}
+						onPublishToChange={changePublishTo}
+						isChangingPublishTo={isChangingPublishTo}
+						websiteHref={getCheckFix({ id: "website" }, { newsletterId: newsletter._id })?.href}
+						domainNudge={domainNudge}
+						onEdit={editField}
 					/>
 				</section>
 			</div>
@@ -434,7 +510,7 @@ export default function FormCampaign({
 			<div
 				data-save-bar={isCompact ? "" : undefined}
 				data-shown={isCompact ? "" : undefined}
-				className="fixed right-(--dock-right) bottom-(--dock-bottom) left-4 z-30 flex h-12 items-center rounded-xl bg-card p-1.5 pl-4 shadow-float md:left-64 lg:hidden"
+				className="fixed right-(--dock-right) bottom-(--dock-bottom) left-4 z-30 flex h-12 items-center rounded-xl bg-card p-1.5 pl-4 shadow-float transition-[left] duration-250 ease-drawer motion-reduce:transition-none md:left-[calc(var(--sidebar-width)+1rem)] lg:hidden"
 			>
 				<BarAction action={action} status={renderStatus()} onEdit={editField} side="top" className="w-full" />
 			</div>
@@ -448,8 +524,10 @@ export default function FormCampaign({
 				}}
 				html={previewHtml}
 				sender={newsletter}
-				subject={fillSampleName(deferredValues.subject)}
-				previewText={fillSampleName(deferredValues.previewText)}
+				subject={deferredValues.subject}
+				previewText={deferredValues.previewText}
+				newsletterId={newsletter._id}
+				contactFields={contactFields}
 			/>
 			<DialogDiscardCampaign
 				id={campaign._id}
@@ -459,26 +537,6 @@ export default function FormCampaign({
 				onOpenChange={setIsDiscardOpen}
 				redirectTo="/campaigns"
 			/>
-		</div>
-	);
-}
-
-// Above the review and send steps while the account can't send: the account's doing rather than the email's, so not
-// in its checklist.
-function NoticeAccountProblems({ problems }) {
-	return (
-		<div role="status" className="mb-6 flex flex-col gap-2 animate-enter">
-			{problems.map(({ id, message, fix }) => (
-				<div key={id} className="flex min-h-12 items-center gap-3 rounded-xl bg-red-500/10 py-2 pr-2 pl-4 text-sm">
-					<CircleX aria-hidden="true" className="size-4 shrink-0 text-red-500" />
-					<p className="min-w-0 flex-1 font-medium text-pretty">{message}</p>
-					{fix?.href && (
-						<Button asChild size="sm" variant="outline" className="bg-background">
-							<Link href={fix.href}>{fix.label}</Link>
-						</Button>
-					)}
-				</div>
-			))}
 		</div>
 	);
 }
@@ -497,6 +555,77 @@ function TitleCampaign({ title, newsletter, status }) {
 			<h1 className="truncate text-lg font-semibold tracking-tight lg:text-base">{title || "Untitled"}</h1>
 			<BadgeStatus status={status} />
 		</div>
+	);
+}
+
+// The subject's merge tags: the first name in one click, or with the account's own fields, a menu of them all that ends
+// on how to add them. Once one is picked, the subject keeps the focus onInsert gives it, instead of the menu's button.
+function ButtonInsertTag({ contactFields, onInsert }) {
+	const isInsertingRef = useRef(false);
+	const className = "-mr-2 shrink-0 text-muted-foreground";
+
+	if (contactFields.length === 0) {
+		return (
+			<Button
+				type="button"
+				variant="ghost"
+				size="icon-sm"
+				onMouseDown={(event) => event.preventDefault()}
+				onClick={() => onInsert(firstNameTag())}
+				aria-label="Insert first name"
+				title="Insert first name"
+				className={className}
+			>
+				<UserRound />
+			</Button>
+		);
+	}
+
+	function insert(tag) {
+		isInsertingRef.current = true;
+		onInsert(tag);
+	}
+
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					aria-label="Insert a first name or a field"
+					title="Insert a first name or a field"
+					className={className}
+				>
+					<UserRound />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent
+				align="end"
+				className="w-56"
+				onCloseAutoFocus={(event) => {
+					if (isInsertingRef.current) event.preventDefault();
+					isInsertingRef.current = false;
+				}}
+			>
+				<DropdownMenuItem onSelect={() => insert(firstNameTag())}>
+					<UserRound />
+					First name
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuLabel>Your fields</DropdownMenuLabel>
+				{contactFields.map((field) => (
+					<DropdownMenuItem key={field.key} onSelect={() => insert(fieldTag(field.key))}>
+						<IconField type={field.type} />
+						<span className="min-w-0 truncate">{field.label}</span>
+					</DropdownMenuItem>
+				))}
+				<DropdownMenuSeparator />
+				<DropdownMenuItem asChild className="gap-2 text-xs text-muted-foreground">
+					<LinkHelpFields />
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
 
@@ -569,7 +698,7 @@ function BarAction({ action, status, onEdit, side = "bottom", className }) {
 	}
 
 	return (
-		<div className={cn("flex min-w-0 items-center gap-3", className)}>
+		<div className={cn("flex min-w-0 items-center gap-2", className)}>
 			<div className="flex min-w-0 flex-1 items-center justify-start gap-1 lg:justify-end">{status}</div>
 			<Popover open={isOpen && problems.length > 0} onOpenChange={setIsOpen}>
 				<PopoverAnchor asChild>
@@ -597,15 +726,11 @@ function BarAction({ action, status, onEdit, side = "bottom", className }) {
 				</PopoverAnchor>
 				<PopoverContent side={side} align="end" onCloseAutoFocus={returnFocus} className="w-80 p-0">
 					<p className="px-4 pt-3.5 pb-1 text-sm font-medium">{action.problemsTitle}</p>
-					<ul className="pb-2">
-						{problems.map((problem) => (
-							<li key={problem.id} className="flex min-h-11 items-center gap-3 px-4 py-1.5">
-								<CircleX aria-hidden="true" className="size-4 shrink-0 text-red-500" />
-								<span className="min-w-0 flex-1 text-sm text-pretty">{problem.message}</span>
-								{problem.fix && <ButtonFix fix={problem.fix} onEdit={fix} />}
-							</li>
-						))}
-					</ul>
+					<ListSendProblems
+						problems={problems}
+						renderFix={(problem) => problem.fix && <ButtonFix fix={problem.fix} onEdit={fix} />}
+						className="px-4 pb-2"
+					/>
 				</PopoverContent>
 			</Popover>
 		</div>
@@ -628,7 +753,7 @@ function ButtonFix({ fix, onEdit, onTest, isTesting, isTestDisabled }) {
 		);
 	}
 	return (
-		<Button variant="outline" size="sm" onClick={() => onEdit(fix.field)}>
+		<Button variant="outline" size="sm" onClick={() => onEdit(fix.field, fix.words)}>
 			{fix.label}
 		</Button>
 	);

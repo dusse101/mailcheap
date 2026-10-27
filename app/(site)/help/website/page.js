@@ -3,7 +3,9 @@ import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
 import { isBotIdEnabled } from "@/lib/bot-check";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
+import { formatNumber } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
+import { getSignupScale } from "@/lib/plans";
 import { SIGNUP_FORM_RATE_LIMITS } from "@/lib/signup-form";
 
 export const metadata = getHelpPageMetadata("website");
@@ -26,7 +28,7 @@ export default function WebsitePage() {
 						It lives at <code>your-newsletter.{sharedDomain}</code>
 						{hasOwnHost && (
 							<>
-								, or on a subdomain of your own domain once you add it on the <LinkApp href="/domains">Domains page</LinkApp>
+								, or on a subdomain of <a href="#own-domain">your own domain</a>
 							</>
 						)}
 						.
@@ -45,11 +47,81 @@ export default function WebsitePage() {
 				<Link href={getHelpHref("design")}>Design and themes</Link>
 			</p>
 
+			{hasOwnHost && (
+				<>
+					<h2 id="own-domain">Your own domain</h2>
+					<p>
+						Your website can live on a subdomain of a domain you own, like <code>news.example.com</code>
+						{sharedDomain && (
+							<>
+								, instead of <code>your-newsletter.{sharedDomain}</code>
+							</>
+						)}
+						. It&apos;s separate from the address you send from: you don&apos;t need to send from that domain.
+						{isCloud() && " It needs a plan."}
+					</p>
+					<p>
+						In the <LinkApp href="/newsletters/website">Website section</LinkApp> of the newsletter&apos;s settings, type the subdomain
+						under Your own domain and click Add domain. The card then lists the DNS records to add where your domain is managed (your
+						registrar or DNS provider):
+					</p>
+					<ol>
+						<li>
+							<strong>Points to MailCheap</strong>: a CNAME record that sends your subdomain&apos;s visitors to MailCheap.
+						</li>
+						<li>
+							<strong>Proves it&apos;s yours</strong>: a TXT record only your account gets, so nobody else can claim your subdomain, even
+							with the CNAME in place.
+						</li>
+						{isCloud() && (
+							<li>
+								<strong>Vercel&apos;s check</strong>: only when your domain is already used with Vercel, where MailCheap runs. It asks for
+								one more TXT record.
+							</li>
+						)}
+					</ol>
+					<p>
+						Copy each host and value with its button. DNS changes can take up to a few hours: click Check now to look again. Once the
+						records are found, your website and the tracked and unsubscribe links in your next emails move to your subdomain.
+						{sharedDomain && (
+							<>
+								{" "}
+								Your website still opens at <code>your-newsletter.{sharedDomain}</code>
+							</>
+						)}
+						{sharedDomain ? ", and" : " The"} emails you already sent keep their links. If your DNS is on Cloudflare, turn off the
+						proxy (the orange cloud) for the CNAME record.
+					</p>
+					<p>
+						Keep the CNAME record: without it, your website and the links in your emails stop working, and the card says so. A newsletter
+						has one domain at a time. Removing it puts your website and the links in your next emails back where they were. Links in
+						emails you already sent keep working as long as the subdomain points at MailCheap.
+					</p>
+				</>
+			)}
+
 			<h2 id="issue-pages">Issue pages</h2>
 			<p>
-				Every issue you send gets a page at <code>/p/</code> followed by its slug, made from the subject. Change the slug in the
-				send step&apos;s Web page row before it goes out, or later from the campaign&apos;s page. There you can also pin an issue: pinned
-				issues lead the home page, in its Featured row.
+				Every issue on your website gets a page at <code>/p/</code> followed by its slug, made from the subject. Change the slug in
+				the send step&apos;s Web page row before it goes out, or later from the campaign&apos;s page. There you can also pin an issue:
+				pinned issues lead the home page, in its Featured row.
+			</p>
+			<p>
+				The send step decides where each issue goes. An email-only issue never gets a page, and a web-only issue goes on the
+				website without an email.{" "}
+				<Link href={getHelpHref("sending", "where")}>Email, web or both</Link>
+			</p>
+
+			<h2 id="remove-issue">Removing an issue</h2>
+			<p>
+				Remove from website, in an issue&apos;s <strong>⋯</strong> menu on the <LinkApp href="/campaigns">Campaigns page</LinkApp>{" "}
+				or on its own page, takes it off your website: its page stops working, and it leaves the home page and the sitemap. This
+				can&apos;t be undone.
+			</p>
+			<p>
+				An issue you also sent by email stays in your campaigns with its report, as email only, and the Read online link in its
+				emails stops working. A web-only issue has nothing left, so it leaves your campaigns too. With no issue left on it, your
+				website goes offline until the next one, as before your first.
 			</p>
 
 			<h2 id="signups">How people sign up</h2>
@@ -138,9 +210,15 @@ export default function WebsitePage() {
 				So that a script can&apos;t sign up strangers, the form has a field only bots fill in, waits a moment after the page loads
 				{hasBotCheck && ", checks that a real browser sent the script form"}, signs up one address each time it loads and takes{" "}
 				{perIp.limit} signups per visitor every 10 minutes and {perEmail.limit} per address a day, whichever newsletters ask. Past{" "}
-				{perNewsletter.limit} signups in 10 minutes, or {perNewsletterPlain.limit} from the HTML form, it refuses new ones until they
-				slow down, and you get an alert. Someone who unsubscribed confirms their address before they&apos;re back, even with confirmed
-				opt-in off.
+				{formatNumber(perNewsletter.limit * getSignupScale(null))} signups in 10 minutes
+				{isCloud() && (
+					<>
+						{" "}
+						on Starter (<Link href={getHelpHref("plans", "signup-limits")}>more on bigger plans</Link>)
+					</>
+				)}
+				, or {perNewsletterPlain.limit} from the HTML form, it refuses new ones until they slow down, and you get an alert. Someone who
+				unsubscribed confirms their address before they&apos;re back, even with confirmed opt-in off.
 			</p>
 			<p>
 				List your sites under Where it works and browsers only show the form there. Only the script works then, since a plain form

@@ -3,7 +3,7 @@ import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
 import { TRIAL_CONTACTS } from "@/lib/actions/contacts";
 import { isGoogleEnabled } from "@/lib/auth";
-import { WARMUP, getSharedDomain, isCloud } from "@/lib/config";
+import { getSharedDomain, isCloud } from "@/lib/config";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 
 export const metadata = getHelpPageMetadata("getting-started");
@@ -18,6 +18,8 @@ export default function GettingStartedPage() {
 				{isGoogleEnabled() ? "Sign in with Google, or with your email address: " : "Sign in with your email address: "}
 				MailCheap emails you a code to type in. Each code works once, for 5 minutes, so there&apos;s no password to remember.
 				{!isCloud() && " On this server, only the addresses its admin allowed can sign in."}
+				{isCloud() &&
+					" Codes only go to addresses that can receive email: a misspelled one like gmail.co gets the right spelling back, and throwaway inboxes can't open an account."}
 			</p>
 
 			<h2 id="setup">Set up your newsletter</h2>
@@ -48,7 +50,17 @@ export default function GettingStartedPage() {
 
 			<h2 id="first-issue">Send your first issue</h2>
 			<p>
-				The <LinkApp href="/">overview page</LinkApp> lists these steps until they&apos;re done.
+				Until they&apos;re done, a list of these steps sits at the bottom right of the <LinkApp href="/">dashboard</LinkApp>, for the
+				newsletter that&apos;s open: its issues and subscribers count for it alone, while your domain and AI agent count for all your
+				newsletters. Close the list and it stays closed for that newsletter, on every device. Your other newsletters, and the ones you
+				add later, keep theirs.
+				{isCloud() && (
+					<>
+						{" "}
+						With a plan, that corner then offers an email from MailCheap to reply to, so its next emails reach your inbox.{" "}
+						<Link href={getHelpHref("newsletters", "inbox-check")}>Getting MailCheap&apos;s emails in your inbox</Link>
+					</>
+				)}
 			</p>
 			<ol>
 				<li>
@@ -79,12 +91,17 @@ export default function GettingStartedPage() {
 					schedule issues for you. <Link href={getHelpHref("api-and-ai")}>API and AI assistants</Link>
 				</li>
 			</ol>
-			{isCloud() && (
-				<p>
-					Your first campaign also starts your account&apos;s {WARMUP.days}-day warm-up, when bigger sends go out over a few hours.{" "}
-					<Link href={getHelpHref("warm-up")}>Warm-up and sending pace</Link>
-				</p>
-			)}
+			<h2 id="sidebar">The sidebar</h2>
+			<p>
+				The sidebar lists your newsletter&apos;s pages, then your account&apos;s, like the <LinkApp href="/domains">Domains page</LinkApp>.
+				The button next to MailCheap at its top folds it down to its icons, for more room on the page. Folded, it opens over the
+				page while your mouse is on it and folds back when you move away. To keep it open, click that button again, or the
+				MailCheap logo on a touch screen. Your browser remembers your choice.
+			</p>
+			<p>
+				While you edit a campaign, the sidebar also folds down on its own to leave the issue more room. The next page shows it
+				open again, unless you folded it yourself.
+			</p>
 		</ArticleHelp>
 	);
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatPoints, formatWeekdayHour } from "../lib/format.js";
+import { formatRateChange, formatWeekdayHour } from "../lib/format.js";
 import { COMPARED_ISSUES, TIMELINE_HOURS, buildTimeline, compareRates, findPeak, hoursToHalf } from "../lib/report-stats.js";
 
 const START = new Date("2026-10-13T09:20:00Z");
@@ -95,11 +95,12 @@ test("a send without delivery reports compares by what it sent", () => {
 	assert.ok(Math.abs(comparison.delta.opened - 0.2) < 1e-9);
 });
 
-test("differences between rates read in percentage points", () => {
-	assert.equal(formatPoints(0.042), "+4.2 pts");
-	assert.equal(formatPoints(-0.0041), "−0.4 pts");
-	assert.equal(formatPoints(0.0001), "0 pts");
-	assert.equal(formatPoints(null), null);
+test("differences between rates read in percent, never in points", () => {
+	assert.equal(formatRateChange(0.042), "+4.2%");
+	assert.equal(formatRateChange(-0.0041), "−0.4%");
+	assert.equal(formatRateChange(0.0001), "0.0%");
+	assert.equal(formatRateChange(null), null);
+	assert.equal(formatRateChange(undefined), null);
 });
 
 test("an hour reads with its weekday in the viewer's timezone, with minutes only where the offset has them", () => {

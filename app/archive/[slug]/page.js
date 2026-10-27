@@ -9,6 +9,7 @@ import { getArchiveUrls } from "@/lib/archive-hosts";
 import { getExternalSiteBase } from "@/lib/external-site";
 import { getHomeSeo } from "@/lib/archive-seo";
 import { formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const revalidate = 3600;
 
@@ -78,7 +79,7 @@ export default async function ArchivePage({ params }) {
 			</section>
 
 			{pinned.length > 0 && (
-				<section style={{ "--stagger": 5 }} className="mx-auto max-w-5xl px-5 animate-enter">
+				<section style={{ "--stagger": 5 }} className={cn("mx-auto max-w-5xl px-5 animate-enter", rest.length === 0 && "pb-24")}>
 					<h2 className="mb-6 text-sm font-medium text-muted-foreground">Featured</h2>
 					<ol className="grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
 						{pinned.map((issue, index) => (
@@ -96,7 +97,7 @@ export default async function ArchivePage({ params }) {
 			)}
 
 			{latest && (
-				<section style={{ "--stagger": 5 }} className="mx-auto max-w-5xl px-5 animate-enter">
+				<section style={{ "--stagger": 5 }} className={cn("mx-auto max-w-5xl px-5 animate-enter", rest.length === 0 && "pb-24")}>
 					<h2 className="mb-4 text-sm font-medium text-muted-foreground">Latest issue</h2>
 					<CardIssue
 						issue={latest}

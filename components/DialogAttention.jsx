@@ -136,7 +136,14 @@ function Details({ details, onNavigate }) {
 						<>
 							<dt className="text-muted-foreground">Newsletter</dt>
 							<dd className="min-w-0 truncate">
-								{newsletter.name} <span className="text-muted-foreground">/{newsletter.slug}</span>
+								<Link
+									href={newsletter.href}
+									onClick={onNavigate}
+									className="font-medium underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground"
+								>
+									{newsletter.name}
+								</Link>{" "}
+								<span className="text-muted-foreground">/{newsletter.slug}</span>
 							</dd>
 						</>
 					)}

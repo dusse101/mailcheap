@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sendAlert } from "@/lib/alerts";
 import { handleStripeEvent } from "@/lib/billing";
 import { isCloud } from "@/lib/config";
+import { siteExtensions } from "@/lib/site-extensions";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
 function reply(status, body) {
@@ -24,7 +25,8 @@ export async function POST(request) {
 	}
 
 	try {
-		return reply(200, { received: true, ...(await handleStripeEvent(event)) });
+		const billing = await handleStripeEvent(event);
+		return reply(200, { received: true, ...billing, ...(await siteExtensions.onStripeEvent(event)) });
 	} catch (error) {
 		console.error(`[stripe-webhook] ${event.type} ${event.id} failed:`, error);
 		await sendAlert({

@@ -3,12 +3,12 @@
 import { isValidObjectId } from "mongoose";
 import { revalidatePath } from "next/cache";
 import { blockAccount, unblockAccount } from "@/lib/account-blocks";
-import { setLimitOverrides, setSendSpread } from "@/lib/accounts";
+import { setLimitOverrides } from "@/lib/accounts";
 import { dismissAlertType, dismissAttention, getAttentionDetails } from "@/lib/admin-alerts";
 import { requireAdmin } from "@/lib/auth";
 import { grantFreePlan, revokeFreePlan } from "@/lib/billing";
 import { isCloud } from "@/lib/config";
-import { approveReview, rejectReview } from "@/lib/content-review-decisions";
+import { approveReview, approveSignupEmailReview, rejectReview, rejectSignupEmailReview } from "@/lib/content-review-decisions";
 import { getGlobalSuppression, removeGlobalSuppression } from "@/lib/global-suppressions";
 import { getPlan } from "@/lib/plans";
 import { serialize } from "@/lib/serialize";
@@ -92,6 +92,33 @@ export async function rejectContentReview(campaignId, { note, block } = {}) {
 	return result;
 }
 
+// A newsletter's own welcome or confirmation email the content check holds (lib/signup-email-review.js): approving lets
+// new subscribers get it.
+export async function approveSignupEmail(newsletterId, kind) {
+	const admin = await requireAdmin();
+	if (!isValidObjectId(newsletterId)) return { error: "Newsletter not found" };
+	const result = await approveSignupEmailReview({ newsletterId: String(newsletterId), kind: String(kind), admin });
+	revalidatePath("/admin");
+	revalidatePath(`/admin/newsletters/${newsletterId}`);
+	return result;
+}
+
+// note: what its owner reads. block: the account too.
+export async function rejectSignupEmail(newsletterId, kind, { note, block } = {}) {
+	const admin = await requireAdmin();
+	if (!isValidObjectId(newsletterId)) return { error: "Newsletter not found" };
+	const result = await rejectSignupEmailReview({
+		newsletterId: String(newsletterId),
+		kind: String(kind),
+		admin,
+		note: typeof note === "string" ? note : "",
+		block: block === true,
+	});
+	revalidatePath("/admin");
+	revalidatePath(`/admin/newsletters/${newsletterId}`);
+	return result;
+}
+
 // The only way a block ends. Its campaigns stay paused until their owner resumes them.
 export async function unblockAccountAction(accountId) {
 	const admin = await requireAdmin();
@@ -103,15 +130,6 @@ export async function unblockAccountAction(accountId) {
 		return { error: `Still blocked, the tenant wasn't resumed: ${error.message}` };
 	}
 	console.info(`[admin] ${admin.email} unblocked account ${accountId}`);
-	revalidatePath("/admin");
-	return { ok: true };
-}
-
-export async function setSpread(accountId, isOn) {
-	const admin = await requireAdmin();
-	if (!isValidObjectId(accountId)) return { error: "Account not found" };
-	if (!(await setSendSpread(accountId, isOn === true))) return { error: "Account not found" };
-	console.info(`[admin] ${admin.email} turned ${isOn === true ? "on" : "off"} the warm-up for account ${accountId}`);
 	revalidatePath("/admin");
 	return { ok: true };
 }

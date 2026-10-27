@@ -12,6 +12,7 @@ export const telegramMessages = [];
 export const openaiRequests = [];
 let openaiHandler = null;
 let stripeHandler = null;
+let rdapHandler = null;
 let telegramAnswer = null;
 let visitor = 0;
 
@@ -38,6 +39,13 @@ function installFetch() {
 			const answer = await openaiHandler({ path, body });
 			return answer instanceof Response ? answer : Response.json(answer);
 		}
+		// Domain registrations (lib/domain-age.js): none known unless a test says, like a registry with no record.
+		const rdap = /^https:\/\/rdap\.org\/domain\/(.+)$/.exec(url);
+		if (rdap) {
+			const registeredAt = rdapHandler?.(decodeURIComponent(rdap[1]));
+			if (!registeredAt) return new Response(null, { status: 404 });
+			return Response.json({ events: [{ eventAction: "registration", eventDate: new Date(registeredAt).toISOString() }] });
+		}
 		if (url.startsWith("https://api.stripe.com/")) {
 			if (!stripeHandler) throw new Error(`Unexpected Stripe request: ${init.method ?? "GET"} ${url}`);
 			const { pathname, searchParams } = new URL(url);
@@ -54,6 +62,11 @@ function installFetch() {
 
 export function mockStripe(handler) {
 	stripeHandler = handler;
+}
+
+// handler(domain): when that domain was registered, or nothing for a registry without it.
+export function mockRdap(handler) {
+	rdapHandler = handler;
 }
 
 // handler({ path, body }) answers like OpenAI: a JSON body, or a Response for errors.
@@ -185,9 +198,6 @@ export async function signIn(email) {
 	const Account = (await import("../../models/Account.js")).default;
 	const stored = await mongoose.connection.db.collection("users").findOne({ email: email.toLowerCase() });
 	user.userId = stored._id;
-	// Past its warm-up: sends up to 200 emails, or 5 times what it proved (proveVolume), go out at full speed. Tests of the
-	// warm-up unset it.
-	await Account.updateOne({ ownerId: stored._id }, { $set: { spreadUntil: new Date(0) } });
 	user.account = await Account.findOne({ ownerId: stored._id }).lean();
 	user.accountId = user.account._id;
 	return user;
@@ -219,21 +229,22 @@ export async function activate(user, { plan = "starter", interval = "month", ...
 	return user.account;
 }
 
-// A campaign the account sent before, which proves its volume (lib/send-spread.js) once it's a day old and under the
-// pause level.
-export async function proveVolume(user, sent, { bounced = 0, hoursAgo = 48 } = {}) {
-	const Campaign = (await import("../../models/Campaign.js")).default;
-	const at = new Date(Date.now() - hoursAgo * 3_600_000);
-	await Campaign.create({
-		accountId: user.accountId,
-		newsletterId: user.newsletterId,
-		subject: "Earlier issue",
-		status: "sent",
-		stats: { recipients: sent, sent, bounced },
-		startedAt: at,
-		sentAt: at,
-		finishedAt: at,
-	});
+// A newsletter whose domain sent before, past its first day with Gmail (lib/sender-warmup.js): nothing holds its Gmail
+// readers back.
+export async function endSenderWarmup(user, newsletterId = user.newsletterId) {
+	const Newsletter = (await import("../../models/Newsletter.js")).default;
+	const SenderDomain = (await import("../../models/SenderDomain.js")).default;
+	const { getSendingDomain } = await import("../../lib/sender-rules.js");
+	const { SENDER_WARMUP } = await import("../../lib/config.js");
+	const newsletter = await Newsletter.findOne({ accountId: user.accountId, _id: newsletterId }).lean();
+	const domain = getSendingDomain(newsletter);
+	const startedAt = new Date(Date.now() - 2 * 86_400_000);
+	await SenderDomain.updateOne(
+		{ accountId: user.accountId, domain },
+		{ $set: { startedAt, firstDay: SENDER_WARMUP.gmailFirstDay, days: 1 }, $unset: { backoffAt: 1 } },
+		{ upsert: true }
+	);
+	await Newsletter.updateOne({ accountId: user.accountId, _id: newsletterId }, { $set: { sendingDomain: domain } });
 }
 
 // An issue the newsletter sent, which puts its website online (lib/archive-data.js).
@@ -242,18 +253,33 @@ export async function addSentIssue(user) {
 	await Campaign.create({ accountId: user.accountId, newsletterId: user.newsletterId, subject: "Sent issue", status: "sent", sentAt: new Date() });
 }
 
-// A domain added through the Domains page, with its DNS records in and its archive subdomain pointed at us.
-export async function addVerifiedDomain(user, domain, { archiveHost = `news.${domain}`, isArchiveLive = true } = {}) {
+// A domain added through the Domains page, with its DNS records in.
+export async function addVerifiedDomain(user, domain) {
 	const { addDomain, checkDomain } = await import("../../lib/domains.js");
 	const { verifyIdentity } = await import("../stubs/ses.mjs");
-	const { cnames } = await import("../stubs/dns-check.mjs");
 	const Account = (await import("../../models/Account.js")).default;
 	const account = await Account.findById(user.accountId).lean();
-	const added = await addDomain({ account, domain, archiveHost });
+	const added = await addDomain({ account, domain });
 	verifyIdentity(domain);
-	if (isArchiveLive) cnames.set(archiveHost, ["cname.mailcheap.ai"]);
 	user.account = await Account.findById(user.accountId).lean();
 	return checkDomain({ account: user.account, domainId: added._id });
+}
+
+// The CNAME and TXT records a website domain needs, as the account would add them.
+export async function pointWebsiteDomain(user, host) {
+	const { cnames, txts } = await import("../stubs/dns-check.mjs");
+	const { getOwnershipRecord } = await import("../../lib/website-domain-rules.js");
+	const ownership = getOwnershipRecord(user.accountId, host);
+	cnames.set(host, ["cname.mailcheap.ai"]);
+	txts.set(ownership.name, [[ownership.value]]);
+	return ownership;
+}
+
+// A website domain added from the newsletter's Website settings with its records in: it goes live at once.
+export async function addLiveWebsiteDomain(user, host, newsletterId = user.newsletterId) {
+	await pointWebsiteDomain(user, host);
+	const { setWebsiteDomain } = await import("../../app/(app)/newsletters/actions.js");
+	return as(user, () => setWebsiteDomain(newsletterId, host));
 }
 
 export function jsonRequest(url, { method = "GET", body, headers = {} } = {}) {

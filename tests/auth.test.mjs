@@ -65,6 +65,38 @@ test("an inbox gets 5 codes every 15 minutes, whatever dots or +tags its address
 	assert.equal(platformEmails.length - emailsBefore, 5);
 });
 
+test("an inbox gets 10 codes a day and a network 30, however slowly they're asked for", async () => {
+	const realNow = Date.now;
+	let offset = 0;
+	Date.now = () => realNow() + offset;
+	const wait = (minutes) => (offset += minutes * 60_000);
+	const ask = (email, ip) => as({ jar: new Map(), ip }, () => actions.sendSigninCode(null, form({ email })));
+	const tooMany = { error: "Too many codes today. Try again tomorrow." };
+	try {
+		let nextIp = 0;
+		for (let round = 0; round < 2; round++) {
+			for (let index = 0; index < 5; index++) assert.deepEqual(await ask("daily@example.com", `192.0.2.${++nextIp}`), { email: "daily@example.com" });
+			wait(16);
+		}
+		assert.deepEqual(await ask("daily@example.com", `192.0.2.${++nextIp}`), tooMany, "an 11th code the same day");
+		assert.deepEqual(await ask("other@example.com", `192.0.2.${++nextIp}`), { email: "other@example.com" }, "another inbox");
+
+		for (let round = 0; round < 3; round++) {
+			for (let index = 0; index < 10; index++) {
+				const email = `office${round * 10 + index}@example.com`;
+				assert.deepEqual(await ask(email, "192.0.2.200"), { email }, email);
+			}
+			wait(16);
+		}
+		assert.deepEqual(await ask("office30@example.com", "192.0.2.200"), tooMany, "a 31st code from the same network");
+
+		wait(24 * 60);
+		assert.deepEqual(await ask("daily@example.com", "192.0.2.200"), { email: "daily@example.com" }, "the next day");
+	} finally {
+		Date.now = realNow;
+	}
+});
+
 test("a wrong code doesn't sign in and doesn't set a session", async () => {
 	const user = { email: "wrong@example.com", jar: new Map(), ip: "198.51.100.201" };
 	await as(user, () => actions.sendSigninCode(null, form({ email: user.email })));

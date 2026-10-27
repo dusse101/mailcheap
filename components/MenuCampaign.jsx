@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ChartColumn, Copy, ExternalLink, Link2, Loader2, MoreHorizontal, PenLine, Trash2 } from "lucide-react";
+import { ChartColumn, Copy, ExternalLink, GlobeOff, Link2, Loader2, MoreHorizontal, PenLine, Trash2 } from "lucide-react";
 import { duplicateCampaign } from "@/app/(app)/campaigns/actions";
 import DialogDiscardCampaign from "@/components/DialogDiscardCampaign";
+import DialogUnpublishCampaign from "@/components/DialogUnpublishCampaign";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -17,8 +18,10 @@ import { toast } from "@/lib/toast";
 
 const EDITABLE_STATUSES = ["draft", "scheduled"];
 
-export default function MenuCampaign({ id, status, subject, scheduledAt, pageUrl }) {
+// pageUrl: only for an issue on the website, which can leave it.
+export default function MenuCampaign({ id, status, subject, scheduledAt, pageUrl, isWebOnly }) {
 	const [isDiscardOpen, setIsDiscardOpen] = useState(false);
+	const [isUnpublishOpen, setIsUnpublishOpen] = useState(false);
 	const [isDuplicating, startDuplicating] = useTransition();
 	const isEditable = EDITABLE_STATUSES.includes(status);
 
@@ -52,7 +55,7 @@ export default function MenuCampaign({ id, status, subject, scheduledAt, pageUrl
 						{isDuplicating ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
 					</Button>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="min-w-44">
+				<DropdownMenuContent align="end" className="min-w-52">
 					<DropdownMenuItem asChild>
 						<Link href={`/campaigns/${id}`}>
 							{isEditable ? <PenLine /> : <ChartColumn />}
@@ -76,6 +79,11 @@ export default function MenuCampaign({ id, status, subject, scheduledAt, pageUrl
 									View page
 								</a>
 							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem variant="destructive" onSelect={() => setIsUnpublishOpen(true)}>
+								<GlobeOff />
+								Remove from website
+							</DropdownMenuItem>
 						</>
 					)}
 					{isEditable && (
@@ -96,6 +104,15 @@ export default function MenuCampaign({ id, status, subject, scheduledAt, pageUrl
 					scheduledAt={status === "scheduled" ? scheduledAt : null}
 					isOpen={isDiscardOpen}
 					onOpenChange={setIsDiscardOpen}
+				/>
+			)}
+			{pageUrl && (
+				<DialogUnpublishCampaign
+					id={id}
+					subject={subject}
+					isWebOnly={isWebOnly}
+					isOpen={isUnpublishOpen}
+					onOpenChange={setIsUnpublishOpen}
 				/>
 			)}
 		</>

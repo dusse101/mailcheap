@@ -1,7 +1,10 @@
 import Image from "next/image";
+import AvatarContact from "@/components/AvatarContact";
 import { cn } from "@/lib/utils";
 
-export default function AvatarUser({ name, email, image, size = 20, className }) {
+// Their photo, or without one the picture their address has (AvatarContact, from gravatarHash in lib/gravatar.js). An
+// author on a website has a name and maybe a photo, but no address, so only their initial.
+export default function AvatarUser({ name, email, image, gravatarHash, size = 20, className }) {
 	// Google's pictures are thumbnails already, and can fail to load when the request sends a referrer.
 	if (image) {
 		return (
@@ -16,6 +19,8 @@ export default function AvatarUser({ name, email, image, size = 20, className })
 			/>
 		);
 	}
+
+	if (email && gravatarHash) return <AvatarContact email={email} gravatarHash={gravatarHash} size={size} />;
 
 	return (
 		<span

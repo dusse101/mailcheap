@@ -18,6 +18,7 @@ test("provider outcomes become actions; SES errors keep theirs", () => {
 	assert.equal(action(SEND_OUTCOMES.throttled), "retry");
 	assert.equal(action(SEND_OUTCOMES.unavailable), "retry");
 	assert.equal(action(SEND_OUTCOMES.suppressed), "suppress");
+	assert.equal(action(SEND_OUTCOMES.credentialRefused), "retry", "lib/sending.js pauses on the third refusal within the hour");
 	for (const outcome of [SEND_OUTCOMES.domainUnverified, SEND_OUTCOMES.tenantPaused, SEND_OUTCOMES.approvalPending, SEND_OUTCOMES.misconfigured]) {
 		assert.equal(action(outcome), "pause", outcome);
 	}

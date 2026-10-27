@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { buildAudienceQuery, selectAudience } from "../lib/audience.js";
+import { after, before, describe, test } from "node:test";
+import mongoose from "mongoose";
+import { AUDIENCE_SORT, buildAudienceQuery, selectAudience } from "../lib/audience.js";
+import { startTestApp } from "./helpers/app.mjs";
 
 const accountId = "64f1a2b3c4d5e6f7a8b9c0d1";
 const newsletterId = "74f1a2b3c4d5e6f7a8b9c0d2";
@@ -101,4 +103,48 @@ test("the Mongo query skips empty suppression lists and invalid limits", () => {
 		assert.equal(buildAudienceQuery({ accountId, newsletterId, audienceLimit }).limit, null);
 	}
 	assert.equal(buildAudienceQuery({ accountId, newsletterId, audienceLimit: "250" }).limit, 250);
+});
+
+// Every stage of a query plan, the SBE engine's included.
+function listStages(plan) {
+	if (!plan || typeof plan !== "object") return [];
+	const children = [plan.inputStage, ...(plan.inputStages ?? []), plan.queryPlan].filter(Boolean);
+	return [...(plan.stage ? [plan] : []), ...children.flatMap(listStages)];
+}
+
+describe("a send's audience in MongoDB", () => {
+	let app;
+	let Contact;
+
+	before(async () => {
+		app = await startTestApp();
+		Contact = (await import("../models/Contact.js")).default;
+		await Contact.init();
+	});
+
+	after(() => app?.stop());
+
+	// A segment that picks a few contacts can sort them in memory: the index matters for the ones that pick many.
+	test("comes from an index in its order, so a big list never sorts in memory", async () => {
+		const ids = { accountId: new mongoose.Types.ObjectId(), newsletterId: new mongoose.Types.ObjectId() };
+		const daysAgo = (days) => new Date(Date.now() - days * 86_400_000);
+		await Contact.insertMany(
+			Array.from({ length: 300 }, (_, index) => ({
+				...ids,
+				email: `reader${index}@example.com`,
+				status: index % 10 === 0 ? "unsubscribed" : "active",
+				tags: index % 50 === 0 ? ["vip", "reader"] : ["reader"],
+				...(index % 3 === 0 && { lastOpenAt: daysAgo(index) }),
+				...(index % 7 === 0 && { lastClickAt: daysAgo(index) }),
+				...(index % 5 === 0 && { imported: { openRate: index / 300, clickRate: index / 900 } }),
+			}))
+		);
+		for (const segmentFilter of [null, { tags: "reader" }]) {
+			const { filter, sort } = buildAudienceQuery({ ...ids, suppressedEmails: ["reader1@example.com"], segmentFilter });
+			const [explain] = [await Contact.find(filter).sort(sort).explain("queryPlanner")].flat();
+			const stages = listStages(explain.queryPlanner.winningPlan);
+			assert.ok(!stages.some(({ stage }) => stage === "SORT"), `${JSON.stringify(segmentFilter)}: ${JSON.stringify(stages)}`);
+			assert.deepEqual(stages.find(({ stage }) => stage === "IXSCAN")?.keyPattern, { newsletterId: 1, status: 1, ...AUDIENCE_SORT });
+		}
+	});
 });

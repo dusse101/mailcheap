@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { addContact } from "@/app/(app)/contacts/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,32 +11,24 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ERROR_CODES } from "@/lib/account-state";
 import { toast } from "@/lib/toast";
 import { usePaywall } from "@/lib/use-paywall";
 
-// Into the newsletter the page shows.
-export default function DialogAddContact({ newsletter, variant = "outline", size }) {
-	const [isOpen, setIsOpen] = useState(false);
+// Into the newsletter the page shows. onCloseAutoFocus: where the focus goes back, as what opened it is outside the dialog.
+export default function DialogAddContact({ newsletter, isOpen, onOpenChange, onCloseAutoFocus }) {
 	const [formKey, setFormKey] = useState(0);
 
 	function changeOpen(open) {
-		setIsOpen(open);
+		onOpenChange(open);
 		if (!open) setFormKey((key) => key + 1);
 	}
 
 	return (
 		<Dialog open={isOpen} onOpenChange={changeOpen}>
-			<DialogTrigger asChild>
-				<Button variant={variant} size={size} disabled={!newsletter}>
-					<Plus data-icon="inline-start" />
-					Add contact
-				</Button>
-			</DialogTrigger>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent className="sm:max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
 				<FormContact key={formKey} newsletter={newsletter} onClose={() => changeOpen(false)} />
 			</DialogContent>
 		</Dialog>

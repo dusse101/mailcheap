@@ -227,7 +227,7 @@ describe("segments through the API", () => {
 		const created = await api(user.key, "POST", "/campaigns", { subject: "Issue", previewText: "Hi", content: "Hello **readers**.", segment: segment.id });
 		assert.equal(created.status, 201);
 		assert.deepEqual(created.body.segment, { id: segment.id, name: "Quiet", deleted: false });
-		assert.deepEqual(created.body.audience, { contacts: 3, neverMailed: 3 });
+		assert.deepEqual(created.body.audience, { contacts: 3, neverMailed: 3, gmail: 0 });
 		assert.equal(created.body.activeContacts, 4);
 
 		const sent = await api(user.key, "POST", `/campaigns/${created.body.id}/send`);
@@ -260,7 +260,7 @@ describe("segments through the API", () => {
 		assert.equal((await api(user.key, "DELETE", `/segments/${segment.id}`)).status, 200);
 		const draft = await api(user.key, "GET", `/campaigns/${id}`);
 		assert.deepEqual(draft.body.segment, { id: segment.id, name: "New", deleted: true });
-		assert.deepEqual(draft.body.audience, { contacts: 0, neverMailed: 0 });
+		assert.deepEqual(draft.body.audience, { contacts: 0, neverMailed: 0, gmail: 0 });
 		assert.equal(draft.body.sendProblem.code, "send_check_failed");
 		assert.equal(assertError(await api(user.key, "POST", `/campaigns/${id}/send`), 422, "send_check_failed"), "Its segment was deleted: pick who gets it");
 		assert.equal(await m.Message.countDocuments({ accountId: user.accountId, campaignId: id }), 0, "nothing was queued");

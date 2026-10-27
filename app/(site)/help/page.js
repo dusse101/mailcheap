@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import ScriptJsonLd from "@/components/ScriptJsonLd";
 import { LAST_CHANCE_DAYS, getCleanupDefaults } from "@/lib/cleanup";
-import { APP_NAME, FIRST_SEND, LIMITS, WARMUP, getSharedDomain, isCloud } from "@/lib/config";
+import { APP_NAME, FIRST_SEND, LIMITS, SENDER_WARMUP, getSharedDomain, isCloud } from "@/lib/config";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { HELP_PATH, getHelpGroups, getHelpHref } from "@/lib/help";
 import { getPageMetadata } from "@/lib/site";
@@ -96,9 +96,9 @@ function getQuestions() {
 	const { pause, block } = LIMITS;
 	return [
 		isCloud() && {
-			question: "What does warming up my account mean?",
-			answer: `For ${WARMUP.days} days after its first campaign, an account sends gradually. At first, up to ${formatNumber(WARMUP.quickEmails)} emails go out at once, and that number grows a day after each send with few bounces and complaints. A bigger send goes out over a few hours, so inboxes like Gmail see your volume grow step by step.`,
-			href: getHelpHref("warm-up"),
+			question: "Why do some Gmail readers get my issue the next day?",
+			answer: `Gmail is careful with the first emails from a new domain. So on its first day, MailCheap sends an issue to its first ${formatNumber(SENDER_WARMUP.gmailFirstDay)} Gmail readers, and the others get it the next day. Readers on other inboxes get it right away, and a domain of your own you already send newsletters with isn't held back.`,
+			href: getHelpHref("warm-up", "new-domain"),
 		},
 		{
 			question: "Why did my campaign pause?",
@@ -107,7 +107,7 @@ function getQuestions() {
 		},
 		{
 			question: "Why do new contacts get my issue in steps?",
-			answer: `The first time you email contacts who never got an email from you, a slice of them goes first. The rest follows ${FIRST_SEND.waitMinutes / 60} hours later if the slice's bounces and complaints stay low. A list with problems shows itself in that slice, before it reaches everyone.`,
+			answer: `The first time you email contacts who never got an email from you, ${formatPercent(FIRST_SEND.steps[0].share)} of them go first, then ${formatPercent(FIRST_SEND.steps[1].share)} more ${FIRST_SEND.waitMinutes} minutes later, then the rest ${FIRST_SEND.waitMinutes} minutes after that, each step only if bounces and complaints stay low. A list with problems stops after a few hundred emails, before it reaches everyone.`,
 			href: getHelpHref("sending", "first-send"),
 		},
 		sharedDomain && {

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Form from "next/form";
 import Link from "next/link";
-import { Search, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import CardPostmaster from "@/components/CardPostmaster";
 import CardSendingCapacity from "@/components/CardSendingCapacity";
 import CardSettings from "@/components/CardSettings";
@@ -9,13 +9,13 @@ import CardStat from "@/components/CardStat";
 import CardUndeliverable from "@/components/CardUndeliverable";
 import ChartSendsDaily from "@/components/ChartSendsDaily";
 import HeaderPage from "@/components/HeaderPage";
+import InputSearch from "@/components/InputSearch";
 import ListAttention from "@/components/ListAttention";
 import { SkeletonSendingCapacity, SkeletonSesAccount } from "@/components/SkeletonOverview";
 import StateEmpty from "@/components/StateEmpty";
 import TableAccounts from "@/components/TableAccounts";
 import TableRecentCampaigns from "@/components/TableRecentCampaigns";
 import TextEmpty from "@/components/TextEmpty";
-import { Input } from "@/components/ui/input";
 import { listAccountsForAdmin } from "@/lib/accounts";
 import { getAccountTotals, getEmailStats, listAttention, listRecentCampaigns } from "@/lib/admin-stats";
 import { requireAdmin } from "@/lib/auth";
@@ -114,16 +114,13 @@ export default async function AdminPage({ searchParams }) {
 								</Link>
 							)}
 						</h2>
-						<Form action="/admin" className="relative w-full sm:w-72">
-							<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-							<Input
-								type="search"
+						<Form action="/admin" className="w-full sm:w-72">
+							<InputSearch
 								name="q"
 								defaultValue={search}
 								maxLength={MAX_SEARCH_LENGTH}
 								placeholder="Email, newsletter or account ID"
 								aria-label="Search accounts"
-								className="pl-9"
 							/>
 						</Form>
 					</div>

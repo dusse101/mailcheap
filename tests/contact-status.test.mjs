@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { STATUS_CHANGES, getStatusChangeProblem, getStatusChanges, needsConsent } from "../lib/contact-status.js";
+import { STATUS_CHANGES_KEPT } from "../lib/status-changes.js";
 import { activate, anonymous, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 
 // Changing a contact's status from its menu, the REST API and MCP: one set of rules, consent to bring back someone who
@@ -234,15 +235,15 @@ describe("through the API and MCP", () => {
 		assert.equal(unsubscribed.status, 200, "leaving is always possible");
 	});
 
-	test("a contact keeps its last 20 changes", async () => {
+	test(`a contact keeps its last ${STATUS_CHANGES_KEPT} changes`, async () => {
 		const user = await customer("history@example.com");
 		await importRows(user, [{ email: "reader@example.org", status: "active" }]);
-		for (let index = 0; index < 22; index++) {
+		for (let index = 0; index < STATUS_CHANGES_KEPT + 2; index++) {
 			const response = await patch(user, "reader@example.org", { status: index % 2 ? "active" : "dormant" });
 			assert.equal(response.status, 200, JSON.stringify(response.body));
 		}
 		const { statusChanges } = await findContact(user, "reader@example.org");
-		assert.equal(statusChanges.length, 20);
+		assert.equal(statusChanges.length, STATUS_CHANGES_KEPT);
 		assert.deepEqual([statusChanges[0].from, statusChanges.at(-1).to], ["active", "active"]);
 	});
 });

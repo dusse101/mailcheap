@@ -18,6 +18,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ADD_NEWSLETTER_PARAM, MAX_NEWSLETTERS_PER_ACCOUNT, NEWSLETTER_COOKIE, NEWSLETTER_LIMIT_MESSAGE } from "@/lib/newsletters";
+import { readCookie } from "@/lib/storage";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +85,7 @@ export default function MenuNewsletter({ newsletters, selectedId, savedId, isCom
 					<span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted">
 						<Plus className="size-3.5" />
 					</span>
-					<span className="truncate text-sm font-medium">Add a newsletter</span>
+					<span className="truncate text-sm font-medium sidebar-label">Add a newsletter</span>
 				</button>
 				{dialog}
 			</>
@@ -108,8 +109,8 @@ export default function MenuNewsletter({ newsletters, selectedId, savedId, isCom
 				<DropdownMenuTrigger asChild>
 					<button type="button" aria-label={`Newsletter: ${shown.name}`} className={cn(TRIGGER, isCompact ? TRIGGER_COMPACT : TRIGGER_FULL)}>
 						<AvatarNewsletter newsletter={shown} size={24} />
-						<span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{shown.name}</span>
-						<span className="relative grid size-4 shrink-0 place-items-center text-muted-foreground">
+						<span className="min-w-0 flex-1 truncate text-left text-sm font-medium sidebar-label">{shown.name}</span>
+						<span className="relative grid size-4 shrink-0 place-items-center text-muted-foreground sidebar-label">
 							<ChevronsUpDown className={cn("absolute size-4", ICON_MOTION, isPending ? ICON_HIDDEN : ICON_SHOWN)} />
 							<Loader2 className={cn("absolute size-4 animate-spin", ICON_MOTION, isPending ? ICON_SHOWN : ICON_HIDDEN)} />
 						</span>
@@ -153,15 +154,11 @@ export default function MenuNewsletter({ newsletters, selectedId, savedId, isCom
 	);
 }
 
-function readCookie(name) {
-	const value = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1];
-	return value ? decodeURIComponent(value) : null;
-}
-
 const TRIGGER =
 	"flex min-w-0 items-center gap-2.5 outline-none transition-[background-color,box-shadow] duration-150 focus-visible:ring-3 focus-visible:ring-ring/50";
+// The folded sidebar only shows the avatar, where it was: the rest is cut at the edge as it fades.
 const TRIGGER_FULL =
-	"h-11 w-full rounded-xl bg-card pr-3 pl-2.5 shadow-border hover:bg-muted/50 hover:shadow-border-hover data-[state=open]:bg-muted/60";
+	"h-11 w-full overflow-hidden rounded-xl bg-card pr-3 pl-2.5 shadow-border hover:bg-muted/50 hover:shadow-border-hover data-[state=open]:bg-muted/60";
 const TRIGGER_COMPACT = "h-10 max-w-full rounded-lg pr-2 pl-1.5 hover:bg-muted data-[state=open]:bg-muted";
 const ITEM = "h-9 gap-2.5 rounded-lg px-2 text-muted-foreground focus:text-foreground [&_svg]:text-muted-foreground";
 // Both icons stay in place, so the spinner and the chevrons cross-fade instead of jumping.

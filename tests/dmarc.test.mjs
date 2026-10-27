@@ -31,8 +31,8 @@ test("a DMARC record is read as receivers read it: its strings joined, other TXT
 });
 
 test("the DMARC row says what the last check found, and names the parent domain whose record covers it", () => {
-	const domain = { domain: "news.example.com", mailFromDomain: "rp.news.example.com", archiveHost: "letters.example.com", records: [] };
-	const dmarc = (fields) => getDomainSetup({ ...domain, ...fields }, { cnameTarget: null }).find(({ key }) => key === "dmarc").status;
+	const domain = { domain: "news.example.com", mailFromDomain: "rp.news.example.com", records: [] };
+	const dmarc = (fields) => getDomainSetup({ ...domain, ...fields }).find(({ key }) => key === "dmarc").status;
 	assert.deepEqual(dmarc({}), { label: "Recommended", tone: "none" }, "never looked up");
 	assert.deepEqual(dmarc({ dmarc: { status: "missing" } }), { label: "Recommended", tone: "none" });
 	assert.deepEqual(dmarc({ dmarc: { status: "found", host: "news.example.com" } }), { label: "Found", tone: "good" });

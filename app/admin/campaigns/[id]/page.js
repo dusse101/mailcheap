@@ -16,11 +16,11 @@ import { getCampaignActivity, getCampaignComparison } from "@/lib/campaign-repor
 import { isCloud } from "@/lib/config";
 import { REVIEW_PAUSE_CODE } from "@/lib/content-review-codes";
 import { toPreviewHtml } from "@/lib/email-preview";
-import { formatDate, formatDateTime, formatNumber, formatRelative } from "@/lib/format";
+import { formatDateTime, formatNumber, formatRelative } from "@/lib/format";
 import { getAccountPlan, isOnFreePlan } from "@/lib/plans";
 import { getPostalAddress } from "@/lib/postal-address";
+import { describePublishTo, isOnWebsite, sendsEmail } from "@/lib/publish-to";
 import { renderEmail } from "@/lib/render-email";
-import { getWarmup } from "@/lib/send-spread";
 import { serialize } from "@/lib/serialize";
 import { siteExtensions } from "@/lib/site-extensions";
 import { TIME_ZONE_COOKIE, resolveTimeZone } from "@/lib/time-zone";
@@ -72,13 +72,15 @@ export default async function AdminCampaignPage({ params }) {
 			>
 				<ListDetails {...found} newsletter={newsletter} timeZone={timeZone} />
 			</CampaignReport>
-			{campaign.review && (
+			{campaign.review ? (
 				<CardContentReview
 					campaignId={String(campaign._id)}
 					review={serialize(campaign.review)}
 					isPending={campaign.status === "paused" && campaign.pauseCode === REVIEW_PAUSE_CODE}
 					ownerEmail={found.ownerEmail}
 				/>
+			) : (
+				campaign.draftReview && <CardContentReview campaignId={String(campaign._id)} review={serialize(campaign.draftReview)} isDraft />
 			)}
 			<section style={{ "--stagger": 7 }} className="mt-6 flex flex-col gap-3 animate-enter">
 				<h2 className="text-sm font-medium text-muted-foreground">Email</h2>
@@ -98,8 +100,8 @@ export default async function AdminCampaignPage({ params }) {
 // Who sent it, from where, to whom and when; the account links to its row on the admin page.
 function ListDetails({ campaign, account, ownerEmail, newsletter, segmentName, alerts, timeZone }) {
 	const sendingNote = getAccountNote(account);
-	const isOnWebsite = newsletter.archiveEnabled && Boolean(campaign.archiveSlug) && campaign.archiveListed !== false;
-	const websiteUrl = isOnWebsite ? getArchiveUrls(newsletter).absolutePost(campaign.archiveSlug) : null;
+	const hasPage = newsletter.archiveEnabled && Boolean(campaign.archiveSlug) && campaign.archiveListed !== false && isOnWebsite(campaign);
+	const websiteUrl = hasPage ? getArchiveUrls(newsletter).absolutePost(campaign.archiveSlug) : null;
 	const dates = [
 		["Created", campaign.createdAt],
 		campaign.status === "scheduled" && ["Scheduled for", campaign.scheduledAt],
@@ -137,7 +139,11 @@ function ListDetails({ campaign, account, ownerEmail, newsletter, segmentName, a
 				</span>
 			),
 		},
-		{ label: "To", value: `${segmentName ?? "Everyone"} · ${formatNumber(campaign.stats?.recipients ?? 0)} recipients` },
+		{ label: "Goes", value: describePublishTo(campaign) },
+		sendsEmail(campaign) && {
+			label: "To",
+			value: `${segmentName ?? "Everyone"} · ${formatNumber(campaign.stats?.recipients ?? 0)} recipients`,
+		},
 		{ label: "Dates", value: dates.map(([label, at]) => `${label} ${formatDateTime(at, timeZone)}`).join(" · ") },
 		{
 			label: "Website",
@@ -192,10 +198,9 @@ function describePlan(account) {
 	return `${plan.name} · ${account.interval === "year" ? "yearly" : "monthly"}`;
 }
 
-// A blocked account first, then a warm-up; nothing for an account that sends normally.
+// A blocked account first; nothing for an account that sends normally.
 function getAccountNote(account) {
 	if (isBlocked(account)) return `Blocked by ${describeBlocker(account.pausedBy)}${account.pauseReason ? `: ${account.pauseReason}` : ""}`;
-	if (getWarmup(account)) return account.spreadUntil ? `Warming up until ${formatDate(account.spreadUntil)}` : "Warms up from its first campaign";
 	const sending = getSendingStatus(account);
 	return sending.tone === "green" ? null : sending.label;
 }

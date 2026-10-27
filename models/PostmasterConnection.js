@@ -27,6 +27,9 @@ const postmasterConnectionSchema = new mongoose.Schema(
 				},
 			],
 		},
+		// The domain's spam rate for each day of Gmail's data read, oldest first, the last POSTMASTER.keepDays: what Gmail's
+		// complaints, which it never reports one by one, can be estimated from.
+		days: [{ _id: false, day: { type: String }, spamRate: { type: Number } }],
 		// Google refusing the token, the API or the domain. alertedAt: the one alert it got, until it works again or an admin
 		// connects again.
 		problem: {

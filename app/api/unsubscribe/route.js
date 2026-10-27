@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { connectDb } from "@/lib/db";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
+import { moveContact } from "@/lib/status-changes";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 import Campaign from "@/models/Campaign";
-import Contact from "@/models/Contact";
 import Message from "@/models/Message";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -35,16 +35,21 @@ async function creditLatestCampaign({ accountId, contactId, newsletterId }) {
 }
 
 // The token is signed, so the contact it names is found whatever the account. Unsubscribing always works,
-// even for an account that canceled.
-async function unsubscribe({ contactId, newsletterId }) {
+// even for an account that canceled. via: link for the page in the email, mail-app for its unsubscribe button.
+async function unsubscribe({ contactId, newsletterId }, via) {
 	await connectDb();
-	const previous = await Contact.findOneAndUpdate(
-		{ _id: contactId, newsletterId, status: { $in: SUBSCRIBED_STATUSES } },
-		{ $set: { status: "unsubscribed", unsubscribedAt: new Date() } }
-	)
-		.setOptions({ crossAccount: true })
-		.select({ _id: 1, accountId: 1 })
-		.lean();
+	const at = new Date();
+	const previous = await moveContact(
+		{ _id: contactId, newsletterId },
+		{
+			from: SUBSCRIBED_STATUSES,
+			to: "unsubscribed",
+			via,
+			at,
+			update: { $set: { unsubscribedAt: at } },
+			options: { crossAccount: true, projection: { _id: 1, accountId: 1 } },
+		}
+	);
 	if (!previous) return;
 
 	console.log(`[unsubscribe] Contact ${contactId} unsubscribed from newsletter ${newsletterId}`);
@@ -88,7 +93,7 @@ export async function POST(request) {
 	if (!reference) return respond(400, "invalid");
 
 	try {
-		await unsubscribe(reference);
+		await unsubscribe(reference, isPageForm ? "link" : "mail-app");
 		return respond(200, "done");
 	} catch (error) {
 		console.error("[unsubscribe] Failed:", error);

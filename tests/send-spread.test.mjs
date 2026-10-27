@@ -1,145 +1,109 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import {
-	getAllowance,
-	getBatchStarts,
-	getGrowth,
+	formatPaceTime,
+	getGmailBatchStarts,
+	getGmailDays,
 	getPace,
-	getPaceHours,
-	getPaceRoom,
-	getProvenEmails,
-	getSendHours,
-	getSpreadEnd,
-	getWarmup,
-	getWarmupDay,
+	getSenderDayEmails,
+	getSenderDayStart,
+	getSenderMs,
+	getSenderPace,
 } from "../lib/send-spread.js";
-import { activate, as, catchRedirect, form, jsonRequest, platformEmails, proveVolume, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, as, catchRedirect, form, jsonRequest, mockRdap, signIn, startTestApp } from "./helpers/app.mjs";
 import { published } from "./stubs/qstash.mjs";
 
 const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
 const CLOUD = { MAILCHEAP_CLOUD: "true" };
+const now = new Date("2026-10-13T12:00:00Z");
+const at = (hours) => new Date(now.getTime() + hours * HOUR_MS);
 
-test("the warm-up runs 30 days from the first campaign, on MailCheap Cloud only", () => {
-	const now = new Date("2026-10-13T12:00:00Z");
-	assert.equal(getWarmupDay({}, now), 0, "before the first campaign");
-	assert.equal(getWarmupDay({ spreadUntil: getSpreadEnd(now) }, now), 1, "the first campaign was just now");
-	assert.equal(getWarmupDay({ spreadUntil: getSpreadEnd(new Date("2026-10-11T00:00:00Z")) }, now), 3, "two and a half days in");
-	assert.equal(getWarmupDay({ spreadUntil: "2026-10-13T13:00:00.000Z" }, now), 30, "its last hour, from a serialized date");
-	assert.equal(getWarmupDay({ spreadUntil: now }, now), null, "over, or ended by an admin");
-	assert.equal(getSpreadEnd(now).toISOString(), "2026-11-12T12:00:00.000Z");
-
-	assert.deepEqual(getWarmup({}, { now, env: CLOUD }), { days: 30, day: 0, hasStarted: false, progress: 0, endsAt: null });
-	const started = getWarmup({ spreadUntil: getSpreadEnd(new Date("2026-10-11T00:00:00Z")) }, { now, env: CLOUD });
-	assert.deepEqual([started.day, started.hasStarted, started.endsAt], [3, true, "2026-11-10T00:00:00.000Z"]);
-	assert.ok(Math.abs(started.progress - 2.5 / 30) < 1e-9);
-	assert.equal(getWarmup({ spreadUntil: now }, { now, env: CLOUD }), null);
-	assert.equal(getWarmup({}, { now, env: { MAILCHEAP_CLOUD: "" } }), null, "no warm-up on a self-hosted server");
-	assert.equal(getPace({}, { proven: 0, now, env: { MAILCHEAP_CLOUD: "" } }), null, "which sends at full speed");
-});
-
-test("a send can be 2 times its proven volume on the warm-up's first day, 5 times by its last day and after it, 200 emails at least", () => {
-	assert.equal(getGrowth(0), 2, "before the first campaign");
-	assert.equal(getGrowth(1), 2);
-	assert.ok(Math.abs(getGrowth(15) - (2 + (3 * 14) / 29)) < 1e-9, "a little more each day");
-	assert.equal(getGrowth(30), 5);
-	assert.equal(getGrowth(null), 5, "after the warm-up");
-	assert.equal(getAllowance({ proven: 0, day: 1 }), 200);
-	assert.equal(getAllowance({ proven: 30, day: null }), 200);
-	assert.equal(getAllowance({ proven: 1000, day: 1 }), 2000);
-	assert.equal(getAllowance({ proven: 1000, day: null }), 5000);
-});
-
-test("small sends go out at once on day 1; bigger ones over 4 hours plus 4 for each doubling, 72 at most", () => {
-	const dayOne = { proven: 0, day: 1 };
-	assert.equal(getSendHours({ emails: 2, ...dayOne }), 0, "2 contacts don't wait");
-	assert.equal(getSendHours({ emails: 200, ...dayOne }), 0);
-	assert.equal(getSendHours({ emails: 400, ...dayOne }), 8, "twice what goes at full speed");
-	assert.equal(getSendHours({ emails: 10_000, ...dayOne }), 27);
-	assert.equal(getSendHours({ emails: 40, recent: 10_000, ...dayOne }), 0, "one batch always goes at once");
-	assert.equal(getSendHours({ emails: 50_000_000, ...dayOne }), 72, "3 days at most");
-	assert.equal(getSendHours({ emails: 2000, proven: 1000, day: 1 }), 0, "twice what it proved, on day 1");
-	assert.equal(getSendHours({ emails: 3000, proven: 1000, day: 1 }), 7, "3 times");
-});
-
-test("the warm-up can't be gamed: tiny sends prove nothing, and a send split in small ones keeps one pace", () => {
-	assert.equal(getSendHours({ emails: 10_000, recent: 5, proven: 0, day: 1 }), 27, "10,000 right after five 1-recipient sends");
-	assert.equal(getSendHours({ emails: 10_000, proven: 1, day: 5 }), 27, "or days after them");
-	assert.equal(getSendHours({ emails: 10_000, proven: 1, day: null }), 27, "or past day 30");
-	assert.equal(
-		getSendHours({ emails: 200, recent: 200, proven: 0, day: 1 }),
-		getSendHours({ emails: 400, proven: 0, day: 1 }),
-		"200 more right after 200 go out like one send of 400"
+test("a new domain holds Gmail's readers back on its first day only, on MailCheap Cloud", () => {
+	const fresh = getSenderPace({}, { now, env: CLOUD });
+	assert.deepEqual(fresh, {
+		day: 1,
+		intoDayMs: 0,
+		waitMs: 0,
+		firstDay: 2000,
+		days: 1,
+		isGradual: false,
+		sentToday: 0,
+		inFlight: 0,
+		hasStarted: false,
+		domain: null,
+	});
+	assert.deepEqual(
+		getSenderPace({ startedAt: at(-6), sentToday: 300, inFlight: 40, domain: "news.example.org" }, { now, env: CLOUD }),
+		{ day: 1, intoDayMs: 6 * HOUR_MS, waitMs: 0, firstDay: 2000, days: 1, isGradual: false, sentToday: 300, inFlight: 40, hasStarted: true, domain: "news.example.org" }
 	);
-	assert.equal(getSendHours({ emails: 4000, recent: 6000, proven: 1000, day: null }), 8, "a send beside others counts with them");
+	assert.equal(getSenderPace({ startedAt: at(-24) }, { now, env: CLOUD }), null, "past its first day");
+	assert.equal(getSenderPace({ days: 0 }, { now, env: CLOUD }), null, "a domain Gmail already knows");
+	assert.equal(getSenderPace({}, { now, env: { MAILCHEAP_CLOUD: "" } }), null, "a self-hosted server");
+	const waiting = getSenderPace({ startedAt: at(6), firstDay: 351, days: 3, isGradual: true, sentToday: 900 }, { now, env: CLOUD });
+	assert.deepEqual([waiting.waitMs, waiting.day, waiting.sentToday], [6 * HOUR_MS, 1, 0], "a back-off's days wait for it to end");
+	assert.equal(getSenderDayStart(at(-30), now).getTime(), at(-6).getTime(), "its second day began 6 hours ago");
+	assert.equal(getSenderDayEmails({ firstDay: 351 }, 3), 1404, "twice as many each day");
 });
 
-test("after the warm-up, a send up to 5 times its proven volume goes at full speed; a jump far over it is paced", () => {
-	assert.equal(getSendHours({ emails: 5000, proven: 1000, day: null }), 0);
-	assert.equal(getSendHours({ emails: 10_000, proven: 1000, day: null }), 8, "10 times");
-	assert.equal(getSendHours({ emails: 100_000, proven: 1000, day: null }), 22, "100 times");
-	assert.equal(getSendHours({ emails: 10_000, proven: 0, day: null }), 27, "nothing proven in 60 days");
+test("on a new domain's first day, its first 2,000 Gmail readers go at once and the others when the day ends", () => {
+	const fresh = getSenderPace({}, { now, env: CLOUD });
+	assert.equal(getSenderMs(fresh, 0), 0);
+	assert.equal(getSenderMs(fresh, 1999), 0);
+	assert.equal(getSenderMs(fresh, 2000), DAY_MS, "the 2,001st waits for the next day");
+	assert.equal(getSenderMs(fresh, 50_000), DAY_MS, "and so does everyone after: then it's over");
+	const later = getSenderPace({ startedAt: at(-6), sentToday: 1500, inFlight: 300 }, { now, env: CLOUD });
+	assert.equal(getSenderMs(later, 199), 0, "what it sent today and what's queued come first");
+	assert.equal(getSenderMs(later, 200), 18 * HOUR_MS, "the rest of its first day");
+	assert.deepEqual(getGmailBatchStarts(42, fresh, now.getTime()), [...Array(40).fill(null), at(24) / 1000, at(24) / 1000]);
+	assert.equal(getSenderMs(null, 10_000), 0, "nothing holds Gmail back");
 });
 
-test("proven volume: the largest campaign of the last 60 days under the pause level, a day after it went out", () => {
-	const now = new Date("2026-10-13T12:00:00Z");
-	const ago = (hours) => new Date(now.getTime() - hours * HOUR_MS);
-	const sent = (count, at, extra = {}) => ({ stats: { sent: count, ...extra }, finishedAt: at });
-	assert.equal(getProvenEmails([], now), 0);
-	assert.equal(getProvenEmails([sent(1000, ago(48)), sent(3000, ago(30)), sent(800, ago(200))], now), 3000);
-	assert.equal(getProvenEmails([sent(5000, ago(12))], now), 0, "its bounces and complaints are still coming in");
-	assert.equal(getProvenEmails([sent(5000, ago(61 * 24))], now), 0, "older than 60 days");
-	assert.equal(getProvenEmails([sent(1000, ago(48), { bounced: 25 })], now), 0, "2.5% bounces");
-	assert.equal(getProvenEmails([sent(1000, ago(48), { complained: 2 })], now), 0, "0.2% complaints");
-	assert.equal(getProvenEmails([sent(1000, ago(48), { bounced: 4, complained: 1 })], now), 1000, "a few bounces and one complaint");
-	assert.equal(
-		getProvenEmails([{ stats: { sent: 900 }, lastChance: { sent: 100 }, sentAt: ago(72) }], now),
-		1000,
-		"last-chance emails count, and a campaign from before finishedAt goes by sentAt"
-	);
-	assert.equal(getProvenEmails([{ stats: { sent: 1000 }, sentAt: ago(30 * 24), finishedAt: ago(2) }], now), 0, "a step that just went out");
+test("after a back-off, Gmail's emails spread over each day, twice as many each day for 3 days", () => {
+	const restart = getSenderPace({ startedAt: at(6), firstDay: 1000, days: 3, isGradual: true }, { now, env: CLOUD });
+	assert.equal(getSenderMs(restart, 0), 6 * HOUR_MS, "after the 6 hours");
+	assert.equal(getSenderMs(restart, 500), 18 * HOUR_MS, "half its first day's 1,000 by the middle of it");
+	assert.equal(getSenderMs(restart, 2000), 42 * HOUR_MS, "the second day's 2,000 by the middle of it");
+	assert.equal(getSenderMs(restart, 100_000), 78 * HOUR_MS, "after its 3 days, the rest at once");
 });
 
-test("the dashboard adds a first send's 3-hour check to a paced send's hours, and says how much goes out at once", () => {
-	const dayOne = { proven: 0, recent: 0, warmup: { day: 1 } };
-	assert.equal(getPaceHours(dayOne, { emails: 2 }), 0);
-	assert.equal(getPaceHours(dayOne, { emails: 10_000, newContacts: 10_000 }), 30, "27 hours, and the check");
-	assert.equal(getPaceHours(dayOne, { emails: 10_000 }), 27, "nobody new");
-	assert.equal(getPaceHours({ proven: 1000, recent: 0, warmup: null }, { emails: 5000, newContacts: 5000 }), 0, "a first send at full speed");
-	assert.equal(getPaceHours(null, { emails: 10_000 }), 0, "self-hosted");
-	assert.equal(getPaceRoom({ proven: 1000, recent: 300, warmup: { day: 1 } }), 1700);
-	assert.equal(getPaceRoom({ proven: 0, recent: 300, warmup: { day: 1 } }), 50, "one batch always goes at once");
+test("the dashboard says how many Gmail readers get a send today and how many later", () => {
+	const fresh = getSenderPace({ domain: "news.example.org" }, { now, env: CLOUD });
+	assert.deepEqual(getGmailDays(fresh, 6103), [2000, 4103]);
+	assert.equal(getGmailDays(fresh, 2000), null, "all of them today");
+	assert.equal(getGmailDays(null, 6103), null);
+	assert.deepEqual(getGmailDays(getSenderPace({ startedAt: at(-2), sentToday: 1800 }, { now, env: CLOUD }), 500), [200, 300]);
+	assert.deepEqual(getGmailDays(getSenderPace({ startedAt: at(-2), sentToday: 2000 }, { now, env: CLOUD }), 500), [0, 500], "today's share is used");
+	const restart = getSenderPace({ startedAt: at(6), firstDay: 1000, days: 3, isGradual: true }, { now, env: CLOUD });
+	assert.deepEqual(getGmailDays(restart, 5000), [1000, 2000, 2000], "after the wait, the days of a back-off");
+	assert.deepEqual(getGmailDays(restart, 800), [800], "after the wait, even when they fit its first day");
+	assert.deepEqual(getPace({ sender: { domain: "news.example.org" }, now, env: CLOUD }).sender.domain, "news.example.org");
+	assert.equal(getPace({ env: { MAILCHEAP_CLOUD: "" } }), null, "a self-hosted server sends at full speed");
+	assert.deepEqual([formatPaceTime(0.4), formatPaceTime(0.01), formatPaceTime(27), formatPaceTime(81)], ["24 minutes", "1 minute", "27 hours", "about 3 days"]);
 });
 
-test("batches start evenly over the spread, the first right away and the last at its end", () => {
-	const now = Date.parse("2026-10-13T12:00:00Z");
-	const seconds = (hours) => Math.floor((now + hours * HOUR_MS) / 1000);
-	assert.deepEqual(getBatchStarts(5, 8 * HOUR_MS, now), [null, seconds(2), seconds(4), seconds(6), seconds(8)]);
-	assert.deepEqual(getBatchStarts(1, 8 * HOUR_MS, now), [null], "one batch goes at once");
-	assert.deepEqual(getBatchStarts(3, 0, now), [null, null, null], "no spread, back to back");
-	assert.deepEqual(getBatchStarts(0, 8 * HOUR_MS, now), []);
-});
-
-describe("sends earn their pace", () => {
+describe("Gmail's readers on a new domain", () => {
 	let app;
 	let m;
 
-	// isNew: before its first campaign. Otherwise past its warm-up, as signIn leaves it.
-	async function setup(email, contacts, { isMailed = false, isNew = false, emails = 100_000 } = {}) {
+	// contacts: { gmail, others }, all mailed before unless isNew, so no first-send steps hold them back.
+	async function setup(email, { gmail = 0, others = 0, isNew = false } = {}) {
 		const user = await signIn(email);
-		await activate(user, { limitOverrides: { emailsPerMonth: emails, subscribers: 100_000 } });
-		if (isNew) await m.Account.updateOne({ _id: user.accountId }, { $unset: { spreadUntil: 1 } });
+		await activate(user, { limitOverrides: { emailsPerMonth: 100_000, subscribers: 100_000 } });
 		const slug = email.split("@")[0];
 		const url = await as(user, () => catchRedirect(m.newsletters.saveNewsletter(null, form({ name: slug, slug, postalAddress: "1 Main St" }))));
 		user.newsletterId = url.split("/").at(-1);
-		await m.Contact.insertMany(
-			Array.from({ length: contacts }, (_, index) => ({
-				accountId: user.accountId,
-				newsletterId: user.newsletterId,
-				email: `reader${index}@${slug}.example.org`,
-				status: "active",
-				...(isMailed && { lastSentAt: new Date(Date.now() - 3 * 86_400_000) }),
-			}))
-		);
+		const contact = (address) => ({
+			accountId: user.accountId,
+			newsletterId: user.newsletterId,
+			email: address,
+			status: "active",
+			...(!isNew && { lastSentAt: new Date(Date.now() - 3 * DAY_MS) }),
+		});
+		await m.Contact.insertMany([
+			...Array.from({ length: gmail }, (_, index) => contact(`mailcheap-test-${slug}-${index}@gmail.com`)),
+			...Array.from({ length: others }, (_, index) => contact(`reader${index}@${slug}.example.org`)),
+		]);
 		return user;
 	}
 
@@ -150,29 +114,28 @@ describe("sends earn their pace", () => {
 		return campaignId;
 	}
 
-	const sortJobs = (jobs) => ({
-		batches: jobs.filter(({ url }) => url.endsWith("/api/jobs/send-batch")),
-		checks: jobs.filter(({ url }) => url.endsWith("/api/jobs/check-first-send")),
-	});
-
-	// What one send published, in order.
-	async function send(user, campaignId, options = {}) {
+	async function send(user, campaignId) {
 		const from = published.length;
-		assert.deepEqual(await as(user, () => m.campaigns.sendCampaign(campaignId, options)), { ok: true });
-		return sortJobs(published.slice(from));
+		assert.deepEqual(await as(user, () => m.campaigns.sendCampaign(campaignId, {})), { ok: true });
+		return published.slice(from).filter(({ url }) => url.endsWith("/api/jobs/send-batch"));
 	}
 
-	async function runBatches(batches) {
-		for (const batch of batches) await m.sendBatchRoute.POST(jsonRequest(batch.url, { method: "POST", body: batch.body }));
+	async function run(jobs) {
+		const results = [];
+		for (const job of jobs) {
+			const route = job.url.endsWith("check-first-send") ? m.checkRoute : m.sendBatchRoute;
+			results.push(await (await route.POST(jsonRequest(job.url, { method: "POST", body: job.body }))).json());
+		}
+		return results;
 	}
 
-	// Each batch's start, in hours from the send.
-	function startHours(batches, start) {
-		return batches.map(({ notBefore }) => (notBefore === undefined ? 0 : Math.round(((notBefore * 1000 - start) / HOUR_MS) * 100) / 100));
-	}
-
+	const providersOf = async (batch) =>
+		(await m.Message.find({ accountId: batch.body.accountId, _id: { $in: batch.body.messageIds } }).select({ provider: 1 }).lean()).map(
+			({ provider }) => provider
+		);
 	const campaignOf = (user, campaignId) => m.Campaign.findOne({ accountId: user.accountId, _id: campaignId }).lean();
-	const isAtOnce = (batches) => batches.every(({ notBefore }) => notBefore === undefined);
+	const newsletterOf = (user) => m.Newsletter.findOne({ accountId: user.accountId, _id: user.newsletterId }).lean();
+	const identityOf = async (user) => (await m.sender.loadSender({ _id: user.accountId }, await newsletterOf(user))).identity;
 
 	before(async () => {
 		app = await startTestApp({ QSTASH_CURRENT_SIGNING_KEY: "sig-current", QSTASH_NEXT_SIGNING_KEY: "sig-next", SEND_RATE_PER_SECOND: "1000" });
@@ -181,152 +144,124 @@ describe("sends earn their pace", () => {
 			campaigns: await import("../app/(app)/campaigns/actions.js"),
 			sendBatchRoute: await import("../app/api/jobs/send-batch/route.js"),
 			checkRoute: await import("../app/api/jobs/check-first-send/route.js"),
-			accounts: await import("../lib/accounts.js"),
-			Account: (await import("../models/Account.js")).default,
+			warmup: await import("../lib/sender-warmup.js"),
+			sender: await import("../lib/sender.js"),
 			Campaign: (await import("../models/Campaign.js")).default,
 			Contact: (await import("../models/Contact.js")).default,
 			Message: (await import("../models/Message.js")).default,
+			Newsletter: (await import("../models/Newsletter.js")).default,
+			SenderDomain: (await import("../models/SenderDomain.js")).default,
 		};
 	});
 
-	after(() => app?.stop());
-
-	test("a small send goes out at once on day 1, and starts the 30-day warm-up", async () => {
-		const user = await setup("small-first@example.com", 2, { isNew: true });
-		const start = Date.now();
-		const campaignId = await draft(user);
-		const { batches, checks } = await send(user, campaignId);
-		assert.deepEqual(startHours(batches, start), [0]);
-		assert.equal(checks.length, 0);
-		const sending = await campaignOf(user, campaignId);
-		assert.deepEqual([sending.spreadHours, sending.sendingUntil], [undefined, undefined]);
-		const { spreadUntil } = await m.Account.findById(user.accountId).lean();
-		assert.ok(Math.abs(spreadUntil.getTime() - getSpreadEnd(new Date(start)).getTime()) < 60_000);
+	after(() => {
+		mockRdap(null);
+		return app?.stop();
 	});
 
-	test("tiny sends don't finish the warm-up: 10,000 contacts after five 1-recipient sends go out over 27 hours, behind a checked slice", async () => {
-		const user = await setup("tiny-sends@example.com", 10_000, { isNew: true });
-		for (let index = 0; index < 5; index++) {
-			const { batches } = await send(user, await draft(user), { audienceLimit: 1 });
-			assert.ok(isAtOnce(batches), "each goes at once");
-			await runBatches(batches);
-		}
-
+	test("its first send: other inboxes and its first 2,000 Gmail readers at once, the other Gmail readers the next day", async () => {
+		const user = await setup("new-shared@example.com", { gmail: 2500, others: 500 });
 		const campaignId = await draft(user);
 		const start = Date.now();
-		const { batches, checks } = await send(user, campaignId);
-		const sending = await campaignOf(user, campaignId);
-		assert.equal(sending.spreadHours, 27, "like a first send of 10,000");
-		assert.deepEqual({ slice: sending.firstSend.slice, held: sending.firstSend.held }, { slice: 500, held: 9499 });
-		// The slice and the one contact mailed before go first, over their share of the 27 hours.
-		const sliceHours = (27 * 501) / 10_000;
-		assert.equal(batches.length, 11);
-		assert.ok(Math.abs(startHours(batches, start).at(-1) - sliceHours) < 0.02);
-		assert.equal(checks.length, 1);
-		assert.ok(Math.abs(checks[0].notBefore * 1000 - (start + (sliceHours + 3) * HOUR_MS)) < 120_000, "3 hours after the slice");
-		assert.ok(Math.abs(sending.sendingUntil.getTime() - (start + 30 * HOUR_MS)) < 120_000, "27 hours and the check");
+		const batches = await send(user, campaignId);
+		assert.equal(batches.length, 60);
+		const atOnce = batches.filter(({ notBefore }) => notBefore === undefined);
+		const nextDay = batches.filter(({ notBefore }) => notBefore !== undefined);
+		assert.equal(atOnce.length, 50, "500 others and 2,000 Gmail readers");
+		assert.equal(nextDay.length, 10);
+		assert.ok(nextDay.every(({ notBefore }) => Math.abs(notBefore * 1000 - (start + DAY_MS)) < 60_000), "a day after its first email");
+		for (const batch of nextDay) assert.deepEqual(new Set(await providersOf(batch)), new Set(["gmail"]));
+		const waiting = await m.Message.countDocuments({ accountId: user.accountId, campaignId, sendAfter: { $gt: new Date() } });
+		assert.equal(waiting, 500, "Gmail readers set for the next day say so");
+		const campaign = await campaignOf(user, campaignId);
+		assert.ok(Math.abs(campaign.sendingUntil.getTime() - (start + DAY_MS)) < 60_000);
+		assert.equal(campaign.spreadHours, undefined);
+		const identity = await identityOf(user);
+		const domain = await m.SenderDomain.findOne({ accountId: user.accountId, domain: identity }).lean();
+		assert.deepEqual([domain.days, domain.firstDay], [1, 2000]);
+		assert.ok(Math.abs(domain.startedAt.getTime() - start) < 60_000, "its first day starts with this send");
 
-		await runBatches(batches);
-		const from = published.length;
-		const checkedAt = Date.now();
-		const check = await (await m.checkRoute.POST(jsonRequest(checks[0].url, { method: "POST", body: checks[0].body }))).json();
-		assert.equal(check.released, 9499);
-		const rest = sortJobs(published.slice(from)).batches;
-		assert.equal(rest.length, 190);
-		assert.ok(Math.abs(startHours(rest, checkedAt).at(-1) - (27 - sliceHours)) < 0.02, "the rest over the rest of the 27 hours");
-	});
+		const second = await setup("new-shared-second@example.com", { gmail: 10 });
+		const other = await send(second, await draft(second));
+		assert.ok(other.every(({ notBefore }) => notBefore === undefined), "another account's new domain has its own day");
 
-	test("after day 30, a jump far over proven volume is paced behind the same first-slice check; up to 5 times goes at full speed", async () => {
-		const user = await setup("past-warmup@example.com", 2000);
-		await proveVolume(user, 200);
-		const campaignId = await draft(user);
-		const start = Date.now();
-		const { checks } = await send(user, campaignId);
-		const sending = await campaignOf(user, campaignId);
-		assert.equal(sending.spreadHours, 8, "10 times its proven volume");
-		assert.deepEqual({ slice: sending.firstSend.slice, held: sending.firstSend.held }, { slice: 200, held: 1800 });
-		assert.ok(Math.abs(checks[0].notBefore * 1000 - (start + (0.8 + 3) * HOUR_MS)) < 120_000);
-		assert.ok(Math.abs(sending.sendingUntil.getTime() - (start + 11 * HOUR_MS)) < 120_000);
-
-		const steady = await setup("steady-sender@example.com", 2000, { isMailed: true });
-		await proveVolume(steady, 500);
-		const { batches, checks: none } = await send(steady, await draft(steady));
-		assert.ok(isAtOnce(batches), "4 times its proven volume");
-		assert.equal(none.length, 0);
-	});
-
-	test("a campaign over the pause level, or less than a day old, proves nothing", async () => {
-		const user = await setup("unproven@example.com", 1000, { isMailed: true });
-		await proveVolume(user, 1000, { bounced: 25 });
-		await proveVolume(user, 1000, { hoursAgo: 2 });
-		const campaignId = await draft(user);
-		await send(user, campaignId);
-		assert.equal((await campaignOf(user, campaignId)).spreadHours, 14, "paced as if nothing was sent: 5 times 200 emails");
-	});
-
-	test("a send in steps keeps one pace: the next 200 right after 200 go out like one send of 400", async () => {
-		const user = await setup("in-steps@example.com", 600, { isMailed: true });
-		const campaignId = await draft(user);
-		const first = await send(user, campaignId, { audienceLimit: 200 });
-		assert.ok(isAtOnce(first.batches));
-		await runBatches(first.batches);
-
-		const from = published.length;
-		const start = Date.now();
-		assert.deepEqual(await as(user, () => m.campaigns.sendCampaignToMore(campaignId, { additional: 200 })), { ok: true });
-		const { batches } = sortJobs(published.slice(from));
-		assert.equal((await campaignOf(user, campaignId)).spreadHours, 8);
-		assert.deepEqual(startHours(batches, start), [0, 2.67, 5.33, 8]);
-	});
-
-	test("pausing doesn't speed a send up, and its pause and block levels stop it as before", async () => {
-		const user = await setup("paced-rates@example.com", 1000, { isMailed: true });
-		const campaignId = await draft(user);
-		const { batches } = await send(user, campaignId);
-		assert.equal((await campaignOf(user, campaignId)).spreadHours, 14);
-		await runBatches(batches.slice(0, 2));
-		await m.Campaign.updateOne({ accountId: user.accountId, _id: campaignId }, { $set: { "stats.bounced": 5 } });
-		const emailsBefore = platformEmails.length;
-		await runBatches(batches.slice(2, 3));
-		const paused = await campaignOf(user, campaignId);
-		assert.deepEqual([paused.status, paused.pauseCode], ["paused", "high_rates"], "5% bounces");
+		const sameDay = await send(user, await draft(user));
 		assert.deepEqual(
-			platformEmails.slice(emailsBefore).map(({ subject }) => subject),
-			["[MailCheap] Campaign paused"]
+			[sameDay.filter(({ notBefore }) => notBefore === undefined).length, sameDay.filter(({ notBefore }) => notBefore !== undefined).length],
+			[10, 50],
+			"a second send that day: its other inboxes at once, all its Gmail readers after the first send's"
+		);
+	});
+
+	test("pausing and resuming doesn't let the next day's Gmail readers go today, and an older batch of theirs waits", async () => {
+		const user = await setup("paused-shared@example.com", { gmail: 2500 });
+		const campaignId = await draft(user);
+		const batches = await send(user, campaignId);
+		const atOnce = batches.filter(({ notBefore }) => notBefore === undefined);
+		const nextDay = batches.filter(({ notBefore }) => notBefore !== undefined);
+		await run(atOnce);
+		assert.equal(await m.Message.countDocuments({ accountId: user.accountId, campaignId, status: "sent" }), 2000);
+
+		assert.deepEqual(await as(user, () => m.campaigns.pauseCampaign(campaignId)), { ok: true });
+		const from = published.length;
+		assert.deepEqual(await as(user, () => m.campaigns.resumeCampaign(campaignId)), { ok: true });
+		const resumed = published.slice(from).filter(({ url }) => url.endsWith("/api/jobs/send-batch"));
+		assert.equal(resumed.length, 10);
+		assert.ok(
+			resumed.every(({ notBefore }) => notBefore * 1000 > Date.now() + 23 * HOUR_MS),
+			"today's 2,000 are out, so the other 500 still go the next day"
 		);
 
-		const from = published.length;
-		const resumedAt = Date.now();
-		assert.deepEqual(await as(user, () => m.campaigns.resumeCampaign(campaignId)), { ok: true });
-		const resumed = sortJobs(published.slice(from)).batches;
-		assert.equal((await campaignOf(user, campaignId)).spreadHours, 14, "a resume keeps its pace");
-		assert.ok(Math.abs(startHours(resumed, resumedAt).at(-1) - 14) < 0.02);
-
-		await m.Campaign.updateOne({ accountId: user.accountId, _id: campaignId }, { $set: { "stats.bounced": 11 } });
-		await runBatches(resumed.slice(0, 1));
-		assert.equal((await m.Account.findById(user.accountId).lean()).status, "paused", "11% bounces block the account");
-		assert.equal((await campaignOf(user, campaignId)).pauseCode, "account_blocked");
+		const [early] = await run([{ ...nextDay[0], notBefore: undefined }]);
+		assert.equal(early.sent, 0, "a batch delivered early leaves them for their day");
+		assert.equal(await m.Message.countDocuments({ accountId: user.accountId, campaignId, status: "sent" }), 2000);
 	});
 
-	test("plan limits come first, and pacing never refuses a send", async () => {
-		const user = await setup("paced-plan@example.com", 1000, { isMailed: true, emails: 600 });
+	test("a domain of its own registered long ago isn't held back; one registered this month, or one no registry dates, is", async () => {
+		const user = await setup("own-domains@example.com");
+		const newsletter = await newsletterOf(user);
+		const account = { _id: user.accountId };
+		mockRdap((domain) => (domain === "old-brand.example" ? "2015-04-01T00:00:00Z" : domain === "fresh-brand.example" ? new Date(Date.now() - 5 * DAY_MS) : null));
+		assert.equal((await m.warmup.getSenderWarmup(account, newsletter, "news.old-brand.example")).days, 0, "its parent domain is old");
+		assert.equal((await m.warmup.getSenderWarmup(account, newsletter, "news.fresh-brand.example")).days, 1, "registered 5 days ago");
+		assert.equal((await m.warmup.getSenderWarmup(account, newsletter, "unknown-brand.example")).days, 1, "no registry has it: not proven older");
+		assert.equal((await m.warmup.getSenderWarmup(account, newsletter, "brand-new.mailcheapmail.com")).days, 1, "a new shared subdomain");
+		mockRdap(() => {
+			throw new Error("asked again");
+		});
+		assert.equal((await m.warmup.getSenderWarmup(account, newsletter, "news.old-brand.example")).days, 0, "kept, not asked again");
+		mockRdap(null);
+	});
+
+	test("a first send's check doesn't wait for Gmail readers its new domain sends the next day", async () => {
+		const user = await setup("steps-and-gmail@example.com", { gmail: 5000, isNew: true });
+		const identity = await identityOf(user);
+		await m.Newsletter.updateOne({ accountId: user.accountId, _id: user.newsletterId }, { $set: { sendingDomain: identity } });
+		// Its first day began an hour ago, with room for 300 Gmail readers.
+		await m.SenderDomain.create({ accountId: user.accountId, domain: identity, startedAt: new Date(Date.now() - HOUR_MS), firstDay: 300, days: 1 });
 		const campaignId = await draft(user);
-		assert.equal((await as(user, () => m.campaigns.sendCampaign(campaignId, {}))).code, "plan_limit_emails");
-		await send(user, campaignId, { audienceLimit: 600 });
-		assert.equal((await campaignOf(user, campaignId)).spreadHours, 11, "600 emails with nothing proven go out, over 11 hours");
-	});
+		const from = published.length;
+		await send(user, campaignId);
+		const firstStep = published.slice(from);
+		await run(firstStep.filter(({ url }) => url.endsWith("send-batch")));
+		assert.equal(await m.Message.countDocuments({ accountId: user.accountId, campaignId, status: "sent" }), 200);
 
-	test("an admin ending the warm-up leaves the 5 times rule, and starting it again begins at 2 times", async () => {
-		const user = await setup("trusted@example.com", 450, { isMailed: true });
-		await proveVolume(user, 100);
-		assert.equal(await m.accounts.setSendSpread(user.accountId, false), true);
-		assert.equal((await m.Account.findById(user.accountId).lean()).spreadUntil <= new Date(), true);
-		assert.ok(isAtOnce((await send(user, await draft(user))).batches), "450 emails are under 5 times 100");
+		const beforeSecond = published.length;
+		const [second] = await run(firstStep.filter(({ url }) => url.endsWith("check-first-send")));
+		assert.deepEqual([second.released, second.step], [250, 2]);
+		const secondStep = published.slice(beforeSecond).filter(({ url }) => url.endsWith("send-batch"));
+		assert.deepEqual(
+			secondStep.map(({ notBefore }) => notBefore !== undefined),
+			[false, false, true, true, true],
+			"100 more today, then the day's share is used"
+		);
+		await run(secondStep.filter(({ notBefore }) => notBefore === undefined));
 
-		assert.equal(await m.accounts.setSendSpread(user.accountId, true), true);
-		const { spreadUntil } = await m.Account.findById(user.accountId).lean();
-		assert.ok(spreadUntil.getTime() > Date.now() + 29 * 24 * HOUR_MS, "for another 30 days");
-		const again = await send(user, await draft(user));
-		assert.ok(again.batches.slice(1).every(({ notBefore }) => notBefore > Date.now() / 1000), "over 2 times 100, with the first send still going out");
+		const lastCheck = published.slice(beforeSecond).find(({ url }) => url.endsWith("check-first-send"));
+		const [last] = await run([lastCheck]);
+		assert.equal(last.waiting, undefined, "the 150 set for tomorrow aren't due");
+		assert.deepEqual([last.released, last.step], [4550, 3]);
+		const campaign = await campaignOf(user, campaignId);
+		assert.ok(campaign.sendingUntil.getTime() > Date.now() + 22 * HOUR_MS, "the rest of Gmail's readers tomorrow");
 	});
 });

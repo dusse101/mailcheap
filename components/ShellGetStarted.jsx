@@ -12,18 +12,18 @@ import { cn } from "@/lib/utils";
 
 // The get-started panel at the bottom right of every dashboard page, open or folded into a pill, around the
 // steps PanelGetStarted renders on the server: left of the support chat's button, and out of the way while a save
-// bar shows (app/globals.css). Closing it hides it for good, on every device.
-export default function ShellGetStarted({ done, total, isFinished, children }) {
+// bar shows (app/globals.css). Closing it hides the open newsletter's for good, on every device.
+export default function ShellGetStarted({ newsletterId, done, total, isFinished, children }) {
 	const isClient = useIsClient();
 	if (!isClient) return null;
 	return (
-		<Dock done={done} total={total} isFinished={isFinished}>
+		<Dock newsletterId={newsletterId} done={done} total={total} isFinished={isFinished}>
 			{children}
 		</Dock>
 	);
 }
 
-function Dock({ done, total, isFinished, children }) {
+function Dock({ newsletterId, done, total, isFinished, children }) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [view, setView] = useState(() => (isFinished ? "closed" : getStartView(pathname)));
@@ -65,7 +65,7 @@ function Dock({ done, total, isFinished, children }) {
 
 	function close() {
 		setView("closed");
-		startTransition(() => dismissGetStarted());
+		startTransition(() => dismissGetStarted(newsletterId));
 	}
 
 	return (

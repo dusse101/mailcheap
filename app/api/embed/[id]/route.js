@@ -5,8 +5,10 @@ import { isBotRequest } from "@/lib/bot-check";
 import { getAppSecret, getAppUrl } from "@/lib/config";
 import { cleanFirstName } from "@/lib/contact-fields";
 import { getSignupProblem } from "@/lib/contacts";
+import { readCountry } from "@/lib/countries";
 import { connectDb } from "@/lib/db";
-import { findSignupNewsletter } from "@/lib/public-newsletters";
+import { formatNumber } from "@/lib/format";
+import { findSignupNewsletterWithScale } from "@/lib/public-newsletters";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import {
 	EMBED_SOURCE,
@@ -63,7 +65,7 @@ export async function POST(request, { params }) {
 	}
 
 	await connectDb();
-	const newsletter = await findSignupNewsletter({ _id: id });
+	const { newsletter, signupScale } = (await findSignupNewsletterWithScale({ _id: id })) ?? {};
 	const settings = toSignupFormSettings(newsletter?.signupForm);
 	if (!newsletter || !settings.enabled) return reply.error(404, FORM_OFF);
 
@@ -98,8 +100,10 @@ export async function POST(request, { params }) {
 	const problem = await getSignupProblem(email);
 	if (problem) return reply.error(400, problem);
 
+	// The script form's limit grows with the plan; the plain form, which can't prove a browser sent it, keeps its own.
 	const isPlain = !fields.token;
-	for (const limit of isPlain ? [PER_NEWSLETTER_PLAIN, PER_NEWSLETTER_PLAIN_DAILY] : [PER_NEWSLETTER]) {
+	const perNewsletter = { ...PER_NEWSLETTER, limit: PER_NEWSLETTER.limit * signupScale };
+	for (const limit of isPlain ? [PER_NEWSLETTER_PLAIN, PER_NEWSLETTER_PLAIN_DAILY] : [perNewsletter]) {
 		if (!(await isRateLimited({ ...limit, key: id }))) continue;
 		await alertFlood(newsletter, { limit, isPlain });
 		return reply.error(429, "This form is busy. Try again in a few minutes.");
@@ -115,6 +119,7 @@ export async function POST(request, { params }) {
 		source: EMBED_SOURCE,
 		sourceDomain: host,
 		firstName: settings.askFirstName ? cleanFirstName(fields.firstName) : "",
+		country: readCountry(request.headers),
 		confirmReturning: true,
 	});
 	return reply.done({ result: isPending ? "pending" : "subscribed", inbox });
@@ -131,7 +136,7 @@ async function alertFlood(newsletter, { limit, isPlain }) {
 			accountId: newsletter.accountId,
 			key: `embed-flood${isPlain ? "-plain" : ""}:${newsletter.slug}`,
 			title: "Signup form paused",
-			detail: `Over ${limit.limit} signups to ${newsletter.name} from ${form} in ${WINDOWS[limit.window]}, so it refuses new ones until they slow down: no confirmation or welcome email goes to addresses a script typed.${isPlain ? " The script form takes more, since it checks for a real browser." : ""} Check new contacts for junk.`,
+			detail: `Over ${formatNumber(limit.limit)} signups to ${newsletter.name} from ${form} in ${WINDOWS[limit.window]}, so it refuses new ones until they slow down: no confirmation or welcome email goes to addresses a script typed.${isPlain ? " The script form takes more, since it checks for a real browser." : ""} Check new contacts for junk.`,
 			path: "/newsletters/form",
 		})
 	);

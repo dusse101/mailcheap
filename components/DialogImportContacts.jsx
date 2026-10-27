@@ -9,6 +9,7 @@ import { createContactField, importContacts } from "@/app/(app)/contacts/actions
 import BadgeStatus from "@/components/BadgeStatus";
 import { notifyFinished } from "@/components/CardImports";
 import InputTags from "@/components/InputTags";
+import ListImportGuides from "@/components/ListImportGuides";
 import { useContactOptions } from "@/components/ProviderContactOptions";
 import ZoneUpload from "@/components/ZoneUpload";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,8 @@ const PREVIEW_ROWS = 6;
 // column goes, then its rows go to MailCheap in chunks and are imported in the background, which the contacts page
 // follows (CardImports). Closing the dialog while the rows are sent doesn't stop them. A CSV dropped on the dialog, or
 // anywhere on the page, is read like one picked; without a plan, the page drop opens the paywall, like the button.
-export default function DialogImportContacts({ newsletter, label = "Import", variant = "outline" }) {
+// guides: how to export the file from other platforms, under the drop zone (siteExtensions.importGuides).
+export default function DialogImportContacts({ newsletter, guides = [], label = "Import", variant = "outline" }) {
 	const router = useRouter();
 	const paywall = usePaywall();
 	const { fields, tags: tagOptions } = useContactOptions();
@@ -194,16 +196,19 @@ export default function DialogImportContacts({ newsletter, label = "Import", var
 		if (isSending) return <StatusSending sending={sending} />;
 		if (!parsed) {
 			return (
-				<ZoneUpload
-					icon={FileUp}
-					title="Drop a CSV file or choose one"
-					hint={`Up to ${formatNumber(MAX_IMPORT_ROWS)} rows`}
-					dropTitle="Drop to read it"
-					accept={CSV_ACCEPT}
-					isDragging={isDragging}
-					onFile={takeFile}
-					className="py-10"
-				/>
+				<div className="flex flex-col gap-4">
+					<ZoneUpload
+						icon={FileUp}
+						title="Drop a CSV file or choose one"
+						hint={`Up to ${formatNumber(MAX_IMPORT_ROWS)} rows`}
+						dropTitle="Drop to read it"
+						accept={CSV_ACCEPT}
+						isDragging={isDragging}
+						onFile={takeFile}
+						className="py-10"
+					/>
+					<ListImportGuides guides={guides} />
+				</div>
 			);
 		}
 		return (
@@ -543,7 +548,7 @@ function SectionOptions({ mode, onMode, tags, onTags, tagOptions }) {
 			</div>
 			<div className="flex flex-col gap-1.5">
 				<span className="text-sm font-medium">Tag everyone</span>
-				<InputTags value={tags} onChange={onTags} suggestions={tagOptions.map(({ name }) => name)} max={10} placeholder="Optional, e.g. from-beehiiv" />
+				<InputTags value={tags} onChange={onTags} suggestions={tagOptions} maxSuggestions={6} max={10} placeholder="Optional, e.g. from-beehiiv" />
 			</div>
 		</section>
 	);

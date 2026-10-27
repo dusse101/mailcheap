@@ -3,12 +3,14 @@ import BlockCode from "@/components/BlockCode";
 import HeaderDocs from "@/components/HeaderDocs";
 import LinkApp from "@/components/LinkApp";
 import { MAX_ACTIVE_API_KEYS } from "@/lib/actions/api-keys";
+import { SIGNUPS_PER_KEY, SIGNUPS_PER_VISITOR } from "@/lib/actions/contacts";
 import { SLUG_CHANGES } from "@/lib/newsletters";
 import { ACTIONS } from "@/lib/actions/registry";
 import { API_BASE_PATH, REQUESTS_PER_KEY } from "@/lib/api/rest";
 import { getAppUrl, isCloud } from "@/lib/config";
 import { getDocsPageMetadata } from "@/lib/docs/llms";
-import { formatWindow } from "@/lib/format";
+import { formatNumber, formatWindow } from "@/lib/format";
+import { PLANS, getSignupScale } from "@/lib/plans";
 
 export const metadata = getDocsPageMetadata("/docs/authentication");
 
@@ -17,6 +19,10 @@ export default function AuthenticationPage() {
 	const limited = ACTIONS.filter(({ rateLimit }) => rateLimit);
 	const signupsOnly = ACTIONS.filter(({ permission }) => permission === "signups");
 	const readArchive = ACTIONS.filter(({ permission }) => permission === "read");
+	const largest = PLANS.at(-1);
+	const signupsAnHour = isCloud()
+		? `${formatNumber(SIGNUPS_PER_KEY.limit)} an hour on Starter, up to ${formatNumber(SIGNUPS_PER_KEY.limit * largest.signupScale)} on ${largest.name}`
+		: `${formatNumber(SIGNUPS_PER_KEY.limit * getSignupScale(null))} an hour`;
 
 	return (
 		<>
@@ -109,7 +115,9 @@ export default function AuthenticationPage() {
 						<tbody className="divide-y divide-border/60">
 							<tr>
 								<td className="py-2.5 pl-4 font-mono text-[13px]">add_contact</td>
-								<td className="py-2.5 pr-4 text-right text-muted-foreground tabular-nums">600 an hour, 5 per visitor in 10 minutes</td>
+								<td className="py-2.5 pr-4 text-right text-muted-foreground tabular-nums">
+									{signupsAnHour}, {SIGNUPS_PER_VISITOR.limit} per visitor in 10 minutes
+								</td>
 							</tr>
 							<tr>
 								<td className="py-2.5 pl-4 font-mono text-[13px]">update_newsletter</td>

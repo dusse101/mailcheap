@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import LinkApp from "@/components/LinkApp";
 import { LIMITS, isCloud } from "@/lib/config";
 import { formatPercent } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
@@ -53,6 +54,26 @@ export default function DeliverabilityPage() {
 					? "Chat with us from the dashboard's banner: we review it and unblock it when it's safe."
 					: "An admin of this server unblocks it from the admin page."}
 			</p>
+
+			<h2 id="test-in-spam">When a test lands in spam</h2>
+			<p>
+				Inboxes are careful with a sender they don&apos;t know yet, and your first test email is often the first email they see from
+				your domain, so it can land in spam even when everything is set up. Your readers&apos; inboxes then learn from how they treat
+				your issues: the ones they open and reply to, and the ones they mark as spam.
+			</p>
+			<ul>
+				<li>
+					Send from your own domain, with every record found on the <LinkApp href="/domains">Domains page</LinkApp>. On Cloudflare,
+					each record is set to DNS only.{" "}
+					<Link href={getHelpHref("sender-addresses", "own-domain")}>Your own domain</Link>
+				</li>
+				<li>
+					In Gmail, open the test, click the three dots, then Show original: SPF, DKIM and DMARC should each say PASS. One that
+					doesn&apos;t points to the record to fix.
+				</li>
+				<li>Use a from name your readers know, and link to your own website rather than a link shortener.</li>
+				<li>Marking the test as not spam only teaches your own inbox, not your readers&apos;.</li>
+			</ul>
 
 			<h2 id="tips">Keeping bounces and complaints low</h2>
 			<ul>

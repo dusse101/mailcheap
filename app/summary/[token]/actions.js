@@ -10,7 +10,7 @@ import { getSummarySettingsPath } from "@/lib/summary-links";
 
 const RATE_LIMIT = { name: "summary-settings", limit: 20, window: "10 m" };
 
-// The token is the permission: it names the account and expires (lib/summary-token.js).
+// The token is the permission: it names the newsletter and its account, and expires (lib/summary-token.js).
 export async function saveSummaryChoice(formData) {
 	const token = String(formData.get("token") ?? "");
 	const frequency = String(formData.get("frequency") ?? "");
@@ -19,6 +19,6 @@ export async function saveSummaryChoice(formData) {
 	const path = getSummarySettingsPath(token);
 	if (!SUMMARY_FREQUENCIES.includes(frequency)) redirect(path);
 	if (await isRateLimited({ ...RATE_LIMIT, key: getClientIp(await headers()) })) redirect(`${path}?error=busy`);
-	await saveSummaryFrequency(reference.accountId, frequency);
+	await saveSummaryFrequency({ ...reference, frequency });
 	redirect(`${path}?saved=${frequency}`);
 }
