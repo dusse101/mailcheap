@@ -169,22 +169,51 @@ describe("key levels", () => {
 		const live = await draft(user, { subject: "Out there" });
 		const unlisted = await draft(user, { subject: "Unlisted" });
 		const pending = await draft(user, { subject: "Still a draft" });
+		const emailOnly = await draft(user, { subject: "Email only" });
+		const held = await draft(user, { subject: "Held" });
+		const rejected = await draft(user, { subject: "Rejected" });
+		const webOnly = await draft(user, { subject: "Web only" });
 		await m.Newsletter.updateOne({ _id: user.newsletterId, accountId: user.accountId }, { $set: { archiveEnabled: true } });
-		await m.Campaign.updateOne({ _id: live, accountId: user.accountId }, { $set: { status: "sent", sentAt: new Date(), archiveSlug: "out-there" } });
-		await m.Campaign.updateOne({ _id: unlisted, accountId: user.accountId }, { $set: { status: "sent", sentAt: new Date(), archiveSlug: "unlisted", archiveListed: false } });
+		const sent = { status: "sent", sentAt: new Date("2026-10-20T12:00:00Z") };
+		await m.Campaign.updateOne({ _id: live, accountId: user.accountId }, { $set: { ...sent, archiveSlug: "out-there" } });
+		await m.Campaign.updateOne(
+			{ _id: unlisted, accountId: user.accountId },
+			{ $set: { ...sent, sentAt: new Date("2026-10-19T12:00:00Z"), archiveSlug: "unlisted", archiveListed: false } }
+		);
+		await m.Campaign.updateOne(
+			{ _id: emailOnly, accountId: user.accountId },
+			{ $set: { ...sent, sentAt: new Date("2026-10-21T12:00:00Z"), archiveSlug: "email-only", publishTo: "email" } }
+		);
+		await m.Campaign.updateOne(
+			{ _id: held, accountId: user.accountId },
+			{ $set: { status: "paused", sentAt: new Date("2026-10-22T12:00:00Z"), archiveSlug: "held", pauseCode: "content_review" } }
+		);
+		await m.Campaign.updateOne(
+			{ _id: rejected, accountId: user.accountId },
+			{ $set: { status: "paused", sentAt: new Date("2026-10-18T12:00:00Z"), archiveSlug: "rejected", pauseCode: "content_rejected" } }
+		);
+		await m.Campaign.updateOne(
+			{ _id: webOnly, accountId: user.accountId },
+			{ $set: { ...sent, sentAt: new Date("2026-10-23T12:00:00Z"), archiveSlug: "web-only", publishTo: "web" } }
+		);
 
 		const listed = await api(readKey, "GET", `/campaigns?newsletter=${user.slug}&status=sent`);
 		assert.equal(listed.status, 200);
-		assert.deepEqual(listed.body.campaigns.map(({ id }) => id), [live]);
-		assert.deepEqual((await api(readKey, "GET", "/campaigns")).body.campaigns.map(({ id }) => id), [live]);
+		assert.deepEqual(listed.body.campaigns.map(({ id }) => id), [webOnly, live]);
+		assert.deepEqual((await api(readKey, "GET", "/campaigns")).body.campaigns.map(({ id }) => id), [webOnly, live]);
 		assert.deepEqual((await api(readKey, "GET", "/campaigns?status=draft")).body.campaigns, []);
+		assert.deepEqual((await api(readKey, "GET", "/campaigns?status=paused")).body.campaigns, [], "held issues stay off the list");
 		const issue = await api(readKey, "GET", `/campaigns/${live}`);
 		assert.equal(issue.status, 200);
 		assert.equal(issue.body.subject, "Out there");
 		assert.match(issue.body.content, /readers/);
+		assert.equal((await api(readKey, "GET", `/campaigns/${webOnly}`)).status, 200);
 		assert.equal((await api(readKey, "GET", `/campaigns/${unlisted}`)).status, 200, "an unlisted issue's page is public by its URL");
 		assertError(await api(readKey, "GET", `/campaigns/${pending}`), 404, "not_found");
-		assert.equal((await api(user.key, "GET", "/campaigns")).body.campaigns.length, 3, "a full access key still sees drafts");
+		assertError(await api(readKey, "GET", `/campaigns/${emailOnly}`), 404, "not_found");
+		assertError(await api(readKey, "GET", `/campaigns/${held}`), 404, "not_found");
+		assertError(await api(readKey, "GET", `/campaigns/${rejected}`), 404, "not_found");
+		assert.equal((await api(user.key, "GET", "/campaigns")).body.campaigns.length, 7, "a full access key still sees drafts");
 
 		for (const [method, path, body] of [
 			["GET", "/overview"],
@@ -208,7 +237,7 @@ describe("key levels", () => {
 		]) {
 			assert.match(assertError(await api(readKey, method, path, body), 403, "forbidden"), /can only read the archive's issues/, `${method} ${path}`);
 		}
-		assert.equal(await m.Campaign.countDocuments({ accountId: user.accountId }), 3);
+		assert.equal(await m.Campaign.countDocuments({ accountId: user.accountId }), 7);
 		assert.equal(await m.Contact.countDocuments({ accountId: user.accountId }), 0);
 		assert.equal(await m.ApiKey.countDocuments({ accountId: user.accountId, name: "Escalate" }), 0);
 		assert.equal((await m.Campaign.findOne({ _id: pending, accountId: user.accountId }).lean()).status, "draft");

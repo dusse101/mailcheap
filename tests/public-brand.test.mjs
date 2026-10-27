@@ -108,7 +108,7 @@ describe("confirming a subscription", () => {
 		assert.equal(opened.status, 303);
 		assert.equal(await statusOf(contact), "pending", "GET confirms nobody");
 
-		const posted = await m.confirmRoute.POST(new Request(url, { method: "POST" }));
+		const posted = await anonymous(() => m.confirmRoute.POST(new Request(url, { method: "POST" })));
 		assert.equal(posted.status, 303);
 		const location = new URL(posted.headers.get("location"));
 		assert.equal(location.pathname, "/confirm");
@@ -118,31 +118,39 @@ describe("confirming a subscription", () => {
 
 		const fromForm = await pendingContact("route-form@example.org");
 		const formToken = createConfirmToken({ contactId: fromForm._id, newsletterId: user.newsletterId });
-		const formPost = await m.confirmRoute.POST(
-			new Request("http://localhost:3000/api/confirm", { method: "POST", body: new URLSearchParams({ token: formToken }) })
+		const formPost = await anonymous(() =>
+			m.confirmRoute.POST(
+				new Request("http://localhost:3000/api/confirm", { method: "POST", body: new URLSearchParams({ token: formToken }) })
+			)
 		);
 		assert.equal(formPost.status, 303);
 		assert.equal(new URL(formPost.headers.get("location")).searchParams.get("token"), formToken);
 		await flushAfter();
 		assert.equal(await statusOf(fromForm), "active");
 
-		const again = await m.confirmRoute.POST(new Request(url, { method: "POST", headers: { origin: "http://localhost:3000" } }));
+		const again = await anonymous(() =>
+			m.confirmRoute.POST(new Request(url, { method: "POST", headers: { origin: "http://localhost:3000" } }))
+		);
 		assert.equal(again.status, 303);
 		assert.equal(await statusOf(contact), "active");
 
-		const forwarded = await m.confirmRoute.POST(
-			new Request(url, { method: "POST", headers: { origin: "https://app.example", "x-forwarded-host": "app.example" } })
+		const forwarded = await anonymous(() =>
+			m.confirmRoute.POST(
+				new Request(url, { method: "POST", headers: { origin: "https://app.example", "x-forwarded-host": "app.example" } })
+			)
 		);
 		assert.equal(forwarded.status, 303);
 
 		for (const origin of ["null", "https://evil.example"]) {
 			const refused = await pendingContact(`refused-${origin.length}@example.org`);
 			const refusedToken = createConfirmToken({ contactId: refused._id, newsletterId: user.newsletterId });
-			const response = await m.confirmRoute.POST(
-				new Request(`http://localhost:3000/api/confirm?token=${encodeURIComponent(refusedToken)}`, {
-					method: "POST",
-					headers: { origin, "x-forwarded-host": "localhost:3000" },
-				})
+			const response = await anonymous(() =>
+				m.confirmRoute.POST(
+					new Request(`http://localhost:3000/api/confirm?token=${encodeURIComponent(refusedToken)}`, {
+						method: "POST",
+						headers: { origin, "x-forwarded-host": "localhost:3000" },
+					})
+				)
 			);
 			assert.equal(response.status, 403, origin);
 			assert.equal(await statusOf(refused), "pending", origin);
@@ -193,12 +201,14 @@ describe("confirming a subscription", () => {
 			assert.doesNotMatch(html, /isn&#x27;t waiting to confirm/, label);
 		}
 
-		const posted = await m.confirmRoute.POST(
-			new Request("http://localhost:3000/api/confirm", {
-				method: "POST",
-				headers: { origin: "http://localhost:3000" },
-				body: new URLSearchParams({ token }),
-			})
+		const posted = await anonymous(() =>
+			m.confirmRoute.POST(
+				new Request("http://localhost:3000/api/confirm", {
+					method: "POST",
+					headers: { origin: "http://localhost:3000" },
+					body: new URLSearchParams({ token }),
+				})
+			)
 		);
 		assert.equal(posted.status, 303);
 		assert.equal(new URL(posted.headers.get("location")).searchParams.get("token"), token);

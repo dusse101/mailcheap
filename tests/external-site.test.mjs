@@ -33,6 +33,7 @@ test("Read online links follow the setting and keep the archive's rules", () => 
 		assert.equal(getIssueWebUrl({ campaign, newsletter }), "https://tacoandtell.com/issues/hello-there");
 		assert.equal(getIssueWebUrl({ campaign, newsletter: { ...newsletter, archiveEnabled: false } }), null, "archive off");
 		assert.equal(getIssueWebUrl({ campaign: { ...campaign, archiveListed: false }, newsletter }), null, "unlisted");
+		assert.equal(getIssueWebUrl({ campaign: { ...campaign, publishTo: "email" }, newsletter }), null, "email only");
 	} finally {
 		delete process.env.NEWSLETTER_EXTERNAL_SITES;
 	}

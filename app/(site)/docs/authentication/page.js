@@ -75,8 +75,9 @@ export default function AuthenticationPage() {
 							<tr>
 								<td className="py-3 pr-4 pl-4 font-medium whitespace-nowrap">Read archive</td>
 								<td className="py-3 pr-4 text-muted-foreground">
-									Only {readArchive.map(({ name }) => name).join(" and ")}, and only for issues on a public archive: drafts, scheduled
-									issues and newsletters with the archive off stay hidden. For a server that shows your issues on your own site.
+									Only {readArchive.map(({ name }) => name).join(" and ")}, and only for issues the public archive lists: drafts,
+									scheduled issues, email-only issues, issues held for review, and newsletters with the archive off stay hidden. For a
+									server that shows your issues on your own site.
 								</td>
 							</tr>
 						</tbody>
