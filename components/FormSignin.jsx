@@ -14,14 +14,17 @@ export default function FormSignin({ next, oauthQuery }) {
 	const email = sent?.email && sent !== dismissed ? sent.email : null;
 
 	if (!email) {
+		// React empties the form once the action returns; sent.value puts back an address to send as it is or to fix.
+		const value = sent?.value ?? dismissed?.email;
 		return (
 			<form action={sendAction} data-goal="signup_started" className="flex flex-col gap-3">
 				<Input
+					key={value}
 					name="email"
 					type="email"
 					placeholder="Email"
 					autoComplete="email"
-					defaultValue={dismissed?.email}
+					defaultValue={value}
 					required
 					autoFocus
 					className="h-11"

@@ -10,10 +10,7 @@ function toDomainError(failure, label) {
 }
 
 export async function addDomainAction(_state, formData) {
-	const { output, failure } = await runDashboardAction("add_domain", {
-		domain: String(formData.get("domain") ?? ""),
-		archiveHost: String(formData.get("archiveHost") ?? ""),
-	});
+	const { output, failure } = await runDashboardAction("add_domain", { domain: String(formData.get("domain") ?? "") });
 	revalidatePath("/domains");
 	return failure ? toDomainError(failure, "Adding the domain") : { ok: true, domain: output.domain };
 }
@@ -22,7 +19,7 @@ export async function checkDomainAction(domainId) {
 	const { output, failure } = await runDashboardAction("check_domain", { id: String(domainId) });
 	revalidatePath("/domains");
 	if (failure) return toDomainError(failure, "Checking the domain");
-	return { ok: true, verified: output.verified, archiveHostVerified: output.archiveHostVerified };
+	return { ok: true, verified: output.verified, ...(output.dnsProblem && { problem: output.dnsProblem }) };
 }
 
 export async function removeDomainAction(domainId) {

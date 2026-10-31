@@ -26,6 +26,8 @@ const messageSchema = new mongoose.Schema(
 		status: { type: String, enum: MESSAGE_STATUSES, default: "queued" },
 		// The contact had never received an email from this account (lib/first-send.js).
 		firstSend: { type: Boolean },
+		// A Gmail reader a new domain sends on a later day: not before then (lib/sending.js markSendAfter).
+		sendAfter: { type: Date },
 		// The email provider's id for it, when the send returns one; else the first event fills it in.
 		providerMessageId: { type: String },
 		error: { type: String },
@@ -53,6 +55,8 @@ messageSchema.index(
 	{ unique: true, partialFilterExpression: { kind: "last-chance" } }
 );
 messageSchema.index({ providerMessageId: 1 }, { sparse: true });
+// A contact's emails, newest first (lib/contact-emails.js), and the checks on its welcome and confirmation emails.
+messageSchema.index({ contactId: 1, _id: -1 });
 messageSchema.index({ kind: 1, createdAt: -1 });
 // The overview's emails sent per hour.
 messageSchema.index({ newsletterId: 1, sentAt: 1 });

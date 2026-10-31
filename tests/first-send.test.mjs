@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { getFirstSendProblem, getFirstSendSlice } from "../lib/first-send.js";
-import { activate, as, catchRedirect, form, jsonRequest, platformEmails, proveVolume, signIn, startTestApp } from "./helpers/app.mjs";
+import { getFirstSendProblem, getFirstSendSteps } from "../lib/first-send.js";
+import { activate, as, catchRedirect, endSenderWarmup, form, jsonRequest, platformEmails, signIn, startTestApp } from "./helpers/app.mjs";
 import { published } from "./stubs/qstash.mjs";
 
-test("the first slice is 5% of never-mailed contacts, between 200 and 2,000", () => {
-	assert.equal(getFirstSendSlice(150), null, "small lists go at once");
-	assert.equal(getFirstSendSlice(200), null);
-	assert.equal(getFirstSendSlice(201), 200);
-	assert.equal(getFirstSendSlice(5000), 250);
-	assert.equal(getFirstSendSlice(10_000), 500);
-	assert.equal(getFirstSendSlice(100_000), 2000);
+test("new contacts go 2% first, then 5% more, then the rest, each step within its bounds", () => {
+	assert.equal(getFirstSendSteps(150), null, "small lists go at once");
+	assert.equal(getFirstSendSteps(200), null);
+	assert.deepEqual(getFirstSendSteps(201), [200, 1]);
+	assert.deepEqual(getFirstSendSteps(400), [200, 200], "no second step when the rest is as small");
+	assert.deepEqual(getFirstSendSteps(1000), [200, 200, 600], "200 at least each");
+	assert.deepEqual(getFirstSendSteps(9335), [200, 467, 8668]);
+	assert.deepEqual(getFirstSendSteps(50_000), [1000, 2500, 46_500]);
+	assert.deepEqual(getFirstSendSteps(200_000), [1000, 5000, 194_000], "1,000 and 5,000 at most");
 });
 
-test("a slice over a campaign's levels stops the rest", () => {
+test("new contacts over a campaign's levels stop the rest", () => {
 	assert.equal(getFirstSendProblem({ sent: 250, bounced: 5 }), null, "2% is the pause limit");
 	assert.deepEqual(getFirstSendProblem({ sent: 250, bounced: 6 }), { level: "pause", reason: "The first 250 new contacts had a bounce rate of 2.40% (limit 2.00%)" });
 	assert.equal(getFirstSendProblem({ sent: 2000, complained: 2 }).level, "pause");
@@ -49,8 +51,8 @@ describe("first sends in steps", () => {
 		const slug = email.split("@")[0];
 		const url = await as(user, () => catchRedirect(m.newsletters.saveNewsletter(null, form({ name: slug, slug, postalAddress: "1 Main St" }))));
 		user.newsletterId = url.split("/").at(-1);
-		// Sends this size are proven, so only the first-send steps hold contacts back (tests/send-spread.test.mjs paces them).
-		await proveVolume(user, 1000);
+		// From a domain Gmail already knows, so only the steps hold contacts back (tests/send-spread.test.mjs holds Gmail's).
+		await endSenderWarmup(user);
 		const contact = (index, lastSentAt) => ({
 			accountId: user.accountId,
 			newsletterId: user.newsletterId,
@@ -88,15 +90,23 @@ describe("first sends in steps", () => {
 
 	after(() => app?.stop());
 
-	test("a slice goes first; the rest waits 3 hours, then follows when the slice is clean", async () => {
-		const user = await setup("clean-list@example.com", { neverMailed: 2500, mailed: 100 });
+	test("2% go first, at random; 5% more 30 minutes after they're out, then the rest, each once the ones before are clean", async () => {
+		const user = await setup("clean-list@example.com", { neverMailed: 5000, mailed: 100 });
 		const start = Date.now();
 		assert.deepEqual(await as(user, () => m.campaigns.sendCampaign(user.campaignId, {})), { ok: true });
-		assert.equal(await count(user, "held"), 2300);
-		assert.equal(await count(user, "queued"), 300, "the slice and contacts mailed before");
+		assert.equal(await count(user, "held"), 4800);
+		assert.equal(await count(user, "queued"), 300, "the first step and contacts mailed before");
 		const campaign = await campaignOf(user);
-		assert.equal(campaign.stats.recipients, 2600);
-		assert.deepEqual({ slice: campaign.firstSend.slice, held: campaign.firstSend.held }, { slice: 200, held: 2300 });
+		assert.equal(campaign.stats.recipients, 5100);
+		assert.deepEqual(
+			{ steps: campaign.firstSend.steps, step: campaign.firstSend.step, slice: campaign.firstSend.slice, held: campaign.firstSend.held },
+			{ steps: [200, 250, 4550], step: 1, slice: 200, held: 4800 }
+		);
+		assert.ok(campaign.sendingUntil.getTime() >= start + 59 * 60_000, "about an hour, for its 2 checks");
+		const contacts = await m.Contact.find({ accountId: user.accountId, newsletterId: user.newsletterId }).sort({ _id: 1 }).select({ _id: 1 }).lean();
+		const firstImported = new Set(contacts.slice(0, 200).map(({ _id }) => String(_id)));
+		const firstStep = await m.Message.find({ accountId: user.accountId, campaignId: user.campaignId, firstSend: true, status: "queued" }).lean();
+		assert.ok(firstStep.some(({ contactId }) => !firstImported.has(String(contactId))), "not just the top of the list");
 
 		const batchJobs = published.filter(({ url, body }) => url.endsWith("send-batch") && String(body.accountId) === String(user.accountId));
 		assert.ok(batchJobs.every(({ flowControl }) => flowControl.key === `account-${user.accountId}` && flowControl.parallelism === 1), "one batch at a time per account");
@@ -104,25 +114,35 @@ describe("first sends in steps", () => {
 		assert.equal(sends.reduce((sum, { result }) => sum + result.sent, 0), 300);
 		assert.equal((await campaignOf(user)).status, "sending", "not sent while contacts are held");
 
-		const [check] = await runJobs({ checks: true }).then((results) => results.filter(({ url }) => url.endsWith("check-first-send")));
-		assert.ok(check.notBefore * 1000 >= start + 179 * 60_000, "3 hours later");
-		assert.equal(check.result.released, 2300);
+		const [second] = await runJobs({ checks: true });
+		assert.ok(second.notBefore * 1000 >= start + 29 * 60_000, "30 minutes later");
+		assert.deepEqual([second.result.released, second.result.step], [250, 2]);
+		assert.equal(await count(user, "held"), 4550);
+		assert.deepEqual([(await campaignOf(user)).firstSend.step, (await campaignOf(user)).firstSend.held], [2, 4550]);
+		assert.equal((await runJobs()).reduce((sum, { result }) => sum + result.sent, 0), 250);
+
+		const [last] = await runJobs({ checks: true });
+		assert.ok(last.notBefore * 1000 >= Date.now() + 28 * 60_000, "30 minutes after the second step");
+		assert.deepEqual([last.result.released, last.result.step], [4550, 3]);
 		assert.equal(await count(user, "held"), 0);
-		assert.equal(await count(user, "queued"), 2300);
+		const finished = await campaignOf(user);
+		assert.ok(finished.firstSend.checkedAt instanceof Date);
+		assert.equal(finished.sendingUntil, undefined, "the rest goes at once");
 		const batches = published.filter(({ url, body }, index) => !handled.has(index) && url.endsWith("send-batch") && String(body.accountId) === String(user.accountId));
-		assert.equal(batches.reduce((sum, { body }) => sum + body.messageIds.length, 0), 2300);
-		assert.ok(batches.every(({ notBefore }) => notBefore === undefined), "past the warm-up, at full speed");
-		skipPublished();
+		assert.ok(batches.every(({ notBefore }) => notBefore === undefined), "at full speed");
+		await runJobs();
+		assert.equal((await campaignOf(user)).status, "sent");
+		assert.equal(published.filter(({ url }, index) => !handled.has(index) && url.endsWith("check-first-send")).length, 0, "no more checks");
 	});
 
-	test("a slice with too many bounces blocks the account; once an admin unblocks it, resuming sends the rest", async () => {
+	test("a first step with too many bounces blocks the account; once an admin unblocks it, resuming sends the rest", async () => {
 		const user = await setup("bought-list@example.com", { neverMailed: 3000 });
 		await as(user, () => m.campaigns.sendCampaign(user.campaignId, {}));
 		await runJobs();
-		const slice = await m.Message.find({ accountId: user.accountId, campaignId: user.campaignId, firstSend: true, status: "sent" })
+		const step = await m.Message.find({ accountId: user.accountId, campaignId: user.campaignId, firstSend: true, status: "sent" })
 			.limit(12)
 			.lean();
-		await m.Message.updateMany({ accountId: user.accountId, _id: { $in: slice.map(({ _id }) => _id) } }, { $set: { status: "bounced", bouncedAt: new Date() } });
+		await m.Message.updateMany({ accountId: user.accountId, _id: { $in: step.map(({ _id }) => _id) } }, { $set: { status: "bounced", bouncedAt: new Date() } });
 
 		const [check] = await runJobs({ checks: true });
 		assert.equal(check.result.blocked, true);
@@ -146,12 +166,12 @@ describe("first sends in steps", () => {
 		skipPublished();
 	});
 
-	test("a slice over the pause level only holds the rest, with a warning, until its owner resumes", async () => {
+	test("a step over the pause level only holds the rest, with a warning, until its owner resumes", async () => {
 		const user = await setup("warm-list@example.com", { neverMailed: 3000 });
 		await as(user, () => m.campaigns.sendCampaign(user.campaignId, {}));
 		await runJobs();
-		const slice = await m.Message.find({ accountId: user.accountId, campaignId: user.campaignId, firstSend: true, status: "sent" }).limit(6).lean();
-		await m.Message.updateMany({ accountId: user.accountId, _id: { $in: slice.map(({ _id }) => _id) } }, { $set: { status: "bounced", bouncedAt: new Date() } });
+		const step = await m.Message.find({ accountId: user.accountId, campaignId: user.campaignId, firstSend: true, status: "sent" }).limit(6).lean();
+		await m.Message.updateMany({ accountId: user.accountId, _id: { $in: step.map(({ _id }) => _id) } }, { $set: { status: "bounced", bouncedAt: new Date() } });
 
 		const emailsBefore = platformEmails.length;
 		const [check] = await runJobs({ checks: true });
@@ -172,15 +192,15 @@ describe("first sends in steps", () => {
 		skipPublished();
 	});
 
-	test("a check while the slice is still going out waits a few more minutes", async () => {
-		const user = await setup("slow-slice@example.com", { neverMailed: 1000 });
+	test("a check while a step is still going out waits a few more minutes", async () => {
+		const user = await setup("slow-step@example.com", { neverMailed: 1000 });
 		await as(user, () => m.campaigns.sendCampaign(user.campaignId, {}));
 		const check = published.find(({ url }, index) => !handled.has(index) && url.endsWith("check-first-send"));
 		skipPublished();
 		const response = await m.checkRoute.POST(jsonRequest(check.url, { method: "POST", body: check.body }));
 		const result = await response.json();
 		assert.equal(result.waiting, true);
-		assert.equal(result.queued, 200);
+		assert.equal(result.due, 200);
 		assert.ok(published.at(-1).url.endsWith("check-first-send"), "checks again later");
 		assert.equal(await count(user, "held"), 800);
 		skipPublished();
@@ -191,6 +211,7 @@ describe("first sends in steps", () => {
 		await as(user, () => m.campaigns.sendCampaign(user.campaignId, {}));
 		assert.equal(await count(user, "held"), 0);
 		assert.equal((await campaignOf(user)).firstSend?.slice, undefined);
+		assert.equal((await campaignOf(user)).sendingUntil, undefined);
 		await runJobs();
 		assert.equal((await campaignOf(user)).status, "sent");
 	});

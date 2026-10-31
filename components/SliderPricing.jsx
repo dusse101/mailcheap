@@ -60,6 +60,7 @@ export default function SliderPricing({ plans, freeMonths, initialIndex = 0, ini
 				</p>
 
 				<div className="mt-auto pt-8">
+					{/* On a phone the bars are 32 to 41px wide, and a yearly price like $7,990 only fits them in a smaller size. */}
 					<div aria-hidden="true" className="relative h-32 sm:h-36">
 						{plans.map((stop, stopIndex) => (
 							<button
@@ -69,7 +70,7 @@ export default function SliderPricing({ plans, freeMonths, initialIndex = 0, ini
 								onClick={() => setIndex(stopIndex)}
 								style={{ left: `${stopIndex * step}%`, width: `${barWidth}%`, height: `${Math.max(stop.bar, 0.28) * 100}%` }}
 								className={cn(
-									"absolute bottom-0 flex justify-center rounded-t-xl pt-2 text-xs font-semibold tabular-nums transition-colors duration-200",
+									"absolute bottom-0 flex justify-center rounded-t-xl pt-2 text-[10px] font-semibold tracking-tight tabular-nums transition-colors duration-200 @2xs:text-[11px] @sm:text-xs @sm:tracking-normal",
 									stopIndex === index ? "bg-foreground text-background" : "bg-foreground/[0.07] text-muted-foreground hover:bg-foreground/[0.12]"
 								)}
 							>

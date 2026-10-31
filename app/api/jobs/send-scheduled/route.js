@@ -3,7 +3,8 @@ import { withQStashSignature } from "@/lib/qstash-route";
 import { runScheduledSend } from "@/lib/scheduling";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// No maxDuration: a send writes a message for every contact it goes to, so how long it may run is the host's to set, and
+// one set here would override it. Vercel's default is 300 seconds.
 
 // Handled outcomes answer 200 so QStash doesn't retry them; a thrown error (database down) is retried.
 // Each outcome is logged: it's the trace of when and why a scheduled issue went out or didn't.

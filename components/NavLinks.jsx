@@ -23,14 +23,14 @@ export default function NavLinks({ isAdmin, onNavigate }) {
 									onClick={onNavigate}
 									aria-current={isActive ? "page" : undefined}
 									className={cn(
-										"flex h-9 items-center gap-2.5 rounded-lg pr-3 pl-2.5 text-sm font-medium transition-colors duration-150",
+										"flex h-9 items-center gap-2.5 overflow-hidden rounded-lg pr-3 pl-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-150",
 										isActive
 											? "bg-muted text-foreground"
 											: "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
 									)}
 								>
-									<Icon className="size-4" />
-									{label}
+									<Icon className="size-4 shrink-0 transition-[translate] duration-250 ease-drawer motion-reduce:transition-none sidebar-folded:translate-x-1" />
+									<span className="sidebar-label">{label}</span>
 								</Link>
 							</li>
 						);

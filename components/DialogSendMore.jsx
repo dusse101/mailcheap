@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { sendCampaignToMore } from "@/app/(app)/campaigns/actions";
 import InputAudienceLimit, { countRecipients } from "@/components/InputAudienceLimit";
 import ListCleanupPreview from "@/components/ListCleanupPreview";
-import NoticeFirstSend from "@/components/NoticeFirstSend";
-import NoticeWarmup from "@/components/NoticeWarmup";
-import TextPlanLimit from "@/components/TextPlanLimit";
+import NoticePace from "@/components/NoticePace";
+import NoticeSendProblems from "@/components/NoticeSendProblems";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -20,14 +20,24 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { getEmailsLeftProblem } from "@/lib/campaign-steps";
 import { summarizePreview } from "@/lib/cleanup";
-import { FIRST_SEND } from "@/lib/config";
 import { formatCount, formatNumber } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import { useToastError } from "@/lib/use-toast-error";
 import { useCleanupPreview } from "@/lib/use-cleanup-preview";
 
-export default function DialogSendMore({ campaignId, sentCount, remainingCount, emailsLeft, isCleanupEnabled, pace, newContacts = 0 }) {
+export default function DialogSendMore({
+	campaignId,
+	sentCount,
+	remainingCount,
+	emailsLeft,
+	isCleanupEnabled,
+	pace,
+	newContacts = 0,
+	gmailShare = 0,
+	isSharedSender = false,
+}) {
 	const router = useRouter();
 	const toastError = useToastError();
 	const [isOpen, setIsOpen] = useState(false);
@@ -73,11 +83,20 @@ export default function DialogSendMore({ campaignId, sentCount, remainingCount, 
 						{formatNumber(sentCount)} got it so far. The next most engaged contacts get it, and nobody receives it twice.
 					</DialogDescription>
 				</DialogHeader>
-				<NoticeWarmup pace={pace} emails={emails} newContacts={newContacts} />
-				{newContacts > FIRST_SEND.minSlice && <NoticeFirstSend count={newContacts} />}
+				<NoticePace pace={pace} emails={emails} newContacts={newContacts} gmailShare={gmailShare} isSharedSender={isSharedSender} />
 				<InputAudienceLimit label="How many more" value={more} onChange={setMore} audienceCount={remaining} />
 				{isCleanupEnabled && <ListCleanupPreview summary={summary} isCounting={isCounting} error={preview?.error} />}
-				{isOverPlan && <TextPlanLimit emailsLeft={emailsLeft} />}
+				{isOverPlan && (
+					<NoticeSendProblems
+						problems={[getEmailsLeftProblem(emailsLeft)]}
+						renderFix={({ fix }) => (
+							<Button asChild variant="outline" size="sm">
+								<Link href={fix.href}>{fix.label}</Link>
+							</Button>
+						)}
+						className="rounded-lg px-3"
+					/>
+				)}
 				<DialogFooter>
 					<DialogClose asChild>
 						<Button variant="outline">Cancel</Button>

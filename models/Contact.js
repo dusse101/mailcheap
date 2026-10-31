@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { accountScoped } from "../lib/account-scope.js";
+import { AUDIENCE_SORT } from "../lib/audience.js";
 
 // pending: signed up to a newsletter that asks new subscribers to confirm, and hasn't yet.
 export const CONTACT_STATUSES = ["active", "pending", "unsubscribed", "bounced", "complained", "dormant"];
@@ -12,6 +13,9 @@ const contactSchema = new mongoose.Schema(
 		source: { type: String, trim: true },
 		// Signed up with the form on the owner's site (source "embed"): that site's host, as the browser named it.
 		sourceDomain: { type: String, trim: true },
+		// Where the person was, as a two-letter code (lib/countries.js): from the signup that added them, their confirmation, or
+		// else their first click in an email.
+		country: { type: String },
 		// What {{first_name}} prints in its emails (lib/merge-tags.js).
 		firstName: { type: String, trim: true },
 		// Values for the account's own fields (Account.contactFields), by key: text, a number or a date (lib/contact-fields.js).
@@ -35,10 +39,14 @@ const contactSchema = new mongoose.Schema(
 		ignoredIssues: { type: Number },
 		lastEngagedAt: { type: Date },
 		lastChanceAt: { type: Date },
-		// Bounced without a send of this account: a send skipped it, on the never-email list (lib/global-suppressions.js).
+		// Bounced without a send of this account: a send skipped it, on the never-email list (lib/global-suppressions.js),
+		// or the list hygiene stopped it (lib/list-hygiene.js), which sets undeliverableReason and the status it had.
 		undeliverableAt: { type: Date },
-		// The last status changes made by hand or through the API and MCP (lib/contact-status.js): who made each, from
-		// where, and whether it came with the person's consent.
+		undeliverableReason: { type: String, enum: ["no-mail-server", "spam-domain"] },
+		undeliverableFrom: { type: String },
+		// Every change of its status, whatever made it (lib/status-changes.js), oldest first. Changes by hand or through the
+		// API and MCP keep who made them and whether they came with the person's consent; a signup again keeps its source,
+		// and the list hygiene its reason.
 		statusChanges: {
 			type: [
 				{
@@ -51,6 +59,8 @@ const contactSchema = new mongoose.Schema(
 					apiKeyId: { type: mongoose.Schema.Types.ObjectId },
 					connectionId: { type: String },
 					consent: { type: Boolean },
+					source: { type: String },
+					reason: { type: String },
 				},
 			],
 			default: undefined,
@@ -83,8 +93,13 @@ contactSchema.index({ newsletterId: 1, subscribedAt: -1, _id: -1 });
 contactSchema.index({ newsletterId: 1, status: 1, subscribedAt: -1, _id: -1 });
 // Segments on opens (lib/segments.js) read a range of it instead of every active contact of a large list.
 contactSchema.index({ newsletterId: 1, status: 1, lastOpenAt: -1 });
+// A send reads its audience in this order, most engaged first (lib/audience.js). Without it MongoDB sorts the whole list
+// in memory, and a send to a list past its 32 MB limit fails.
+contactSchema.index({ newsletterId: 1, status: 1, ...AUDIENCE_SORT });
 // A tag's contacts, newest first, for the list's tag filter and segments on tags, and the newsletter's tags.
 contactSchema.index({ newsletterId: 1, tags: 1, subscribedAt: -1, _id: -1 });
+// The same for a source, and the newsletter's sources.
+contactSchema.index({ newsletterId: 1, source: 1, subscribedAt: -1, _id: -1 });
 // The list cleanup totals in newsletter settings.
 contactSchema.index({ newsletterId: 1, lastChanceAt: 1 }, { partialFilterExpression: { lastChanceAt: { $exists: true } } });
 // An admin taking an address off the never-email list finds the contacts it stopped, in every account.

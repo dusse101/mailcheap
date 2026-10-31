@@ -96,10 +96,11 @@ test("the index has every article's sections and the docs' endpoints; a self-hos
 	assert.ok(hrefs.has("/docs/errors#rate_limited"));
 	assert.ok(hrefs.has("/docs/mcp#claude"));
 	assert.ok(![...hrefs].some((href) => /^\/help\/(warm-up|plans)/.test(href)), "cloud-only articles stay out");
-	assert.ok(cloud.some(({ href }) => href === "/help/warm-up#what"));
-	assert.ok(!hrefs.has("/help/account#summary-email"), "and so do cloud-only sections");
-	assert.ok(hrefs.has("/help/account#delete"));
-	assert.ok(cloud.some(({ href }) => href === "/help/account#summary-email"));
+	assert.ok(cloud.some(({ href }) => href === "/help/warm-up#why"));
+	assert.ok(!hrefs.has("/help/newsletters#notifications"), "and so do cloud-only sections");
+	assert.ok(hrefs.has("/help/newsletters#design"));
+	assert.ok(cloud.some(({ href }) => href === "/help/newsletters#notifications"));
+	assert.ok(cloud.some(({ href }) => href === "/help/newsletters#inbox-check"));
 
 	for (const href of hrefs) {
 		const [, slug, section] = href.match(/^\/help\/([^#]+)(?:#(.+))?$/) ?? [];

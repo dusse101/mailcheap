@@ -69,7 +69,7 @@ test("rows are checked once each, and past unsubscribes always go in", () => {
 		{ email: "len@hotmial.com", status: "unsubscribed" },
 	]);
 	assert.deepEqual(contacts.map(({ email }) => email), ["jane@acme.com", "sales@other.com", "len@hotmial.com"]);
-	assert.deepEqual(dropped, { invalid: 1, typo: 1, trap: 1, role: 1, disposable: 1, duplicate: 1, suppressed: 0, undeliverable: 0, noMail: 0 });
+	assert.deepEqual(dropped, { invalid: 1, typo: 1, trap: 1, role: 1, disposable: 1, spamDomain: 0, duplicate: 1, suppressed: 0, undeliverable: 0, noMail: 0 });
 });
 
 describe("contact imports", () => {
@@ -127,7 +127,7 @@ describe("contact imports", () => {
 			})
 		);
 		assert.equal(first.created, 1);
-		assert.deepEqual(first.dropped, { invalid: 1, typo: 0, trap: 0, role: 1, disposable: 1, duplicate: 3, suppressed: 1, undeliverable: 0, noMail: 0 });
+		assert.deepEqual(first.dropped, { invalid: 1, typo: 0, trap: 0, role: 1, disposable: 1, spamDomain: 0, duplicate: 3, suppressed: 1, undeliverable: 0, noMail: 0 });
 
 		const second = await as(user, () =>
 			m.contacts.importContacts({
@@ -149,7 +149,7 @@ describe("contact imports", () => {
 		assert.ok(stored.consentAt instanceof Date);
 		assert.equal(stored.userId.toString(), user.userId.toString());
 		assert.deepEqual({ rows: stored.rows, created: stored.created, existing: stored.existing }, { rows: 8, created: 2, existing: 1 });
-		assert.deepEqual(stored.dropped, { invalid: 1, typo: 0, trap: 0, role: 1, disposable: 1, duplicate: 3, suppressed: 1, undeliverable: 0, noMail: 0 });
+		assert.deepEqual(stored.dropped, { invalid: 1, typo: 0, trap: 0, role: 1, disposable: 1, spamDomain: 0, duplicate: 3, suppressed: 1, undeliverable: 0, noMail: 0 });
 
 		const cat = await m.Contact.findOne({ accountId: user.accountId, email: "cat@example.org" }).lean();
 		assert.equal(cat.importId.toString(), first.importId);

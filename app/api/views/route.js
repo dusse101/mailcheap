@@ -1,4 +1,5 @@
 import { connectDb } from "@/lib/db";
+import { WEB_FILTER } from "@/lib/publish-to";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import { isObjectIdString } from "@/lib/validation";
 import Campaign from "@/models/Campaign";
@@ -11,7 +12,7 @@ function noContent() {
 }
 
 // Archive pages send one beacon per issue per browser and day; this only counts the ones from people.
-// Only a published issue can be counted, whatever its account.
+// Only an issue on the website can be counted, whatever its account.
 export async function POST(request) {
 	const userAgent = request.headers.get("user-agent") ?? "";
 	const { id } = await request.json().catch(() => ({}));
@@ -20,7 +21,7 @@ export async function POST(request) {
 
 	await connectDb();
 	await Campaign.updateOne(
-		{ _id: id, archiveSlug: { $type: "string" }, status: { $in: ["sending", "paused", "sent"] } },
+		{ _id: id, archiveSlug: { $type: "string" }, ...WEB_FILTER },
 		{ $inc: { webViews: 1 } }
 	).setOptions({ crossAccount: true });
 	return noContent();

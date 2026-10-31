@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/lib/toast";
 
-export default function DialogRemoveDomain({ id, domain, hasArchiveHost }) {
+export default function DialogRemoveDomain({ id, domain }) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [isRemoving, startRemoving] = useTransition();
 
@@ -40,7 +40,7 @@ export default function DialogRemoveDomain({ id, domain, hasArchiveHost }) {
 				<DialogHeader>
 					<DialogTitle>Remove {domain}?</DialogTitle>
 					<DialogDescription>
-						Newsletters can&apos;t send from it anymore{hasArchiveHost && ", and its website subdomain stops working"}. You can add it again later.
+						Newsletters can&apos;t send from it anymore. You can add it again later.
 					</DialogDescription>
 				</DialogHeader>
 				<DialogFooter>

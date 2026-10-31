@@ -3,13 +3,11 @@ import { test } from "node:test";
 import { getDnsHost, getDomainSetup } from "../lib/domain-records.js";
 import { rootDomain } from "../lib/root-domain.js";
 
-const CNAME_TARGET = "cname.mailcheap.ai";
-
 // A PostShiba domain as lib/domains.js stores it.
-function postshibaDomain(domain, archiveHost = `news.${domain}`) {
+function postshibaDomain(domain) {
 	return {
 		domain,
-		archiveHost,
+		archiveHost: `news.${domain}`,
 		mailFromDomain: `rp.${domain}`,
 		records: [
 			{ purpose: "dkim", type: "CNAME", name: `ps1._domainkey.${domain}`, value: "dom_123.customers.postshiba.com" },
@@ -19,7 +17,7 @@ function postshibaDomain(domain, archiveHost = `news.${domain}`) {
 }
 
 function listRecords(domain) {
-	return getDomainSetup(domain, { cnameTarget: CNAME_TARGET }).flatMap(({ records }) => records.map(({ type, name, host, value }) => ({ type, name, host, value })));
+	return getDomainSetup(domain).flatMap(({ records }) => records.map(({ type, name, host, value }) => ({ type, name, host, value })));
 }
 
 test("root domains come from the Public Suffix List, for hosts and email addresses", () => {
@@ -39,31 +37,18 @@ test("an apex domain's hosts leave out the domain, and values stay as they are",
 	assert.deepEqual(listRecords(postshibaDomain("example.com")), [
 		{ type: "CNAME", name: "ps1._domainkey.example.com", host: "ps1._domainkey", value: "dom_123.customers.postshiba.com" },
 		{ type: "CNAME", name: "rp.example.com", host: "rp", value: "rp.postshiba.com" },
-		{ type: "CNAME", name: "news.example.com", host: "news", value: CNAME_TARGET },
 		{ type: "TXT", name: "_dmarc.example.com", host: "_dmarc", value: "v=DMARC1; p=none;" },
 	]);
 });
 
 test("a subdomain's hosts keep its own labels: its records go in the root domain's zone", () => {
-	assert.deepEqual(
-		listRecords(postshibaDomain("news.example.com", "read.news.example.com")).map(({ host }) => host),
-		["ps1._domainkey.news", "rp.news", "read.news", "_dmarc.news"]
-	);
+	assert.deepEqual(listRecords(postshibaDomain("news.example.com")).map(({ host }) => host), ["ps1._domainkey.news", "rp.news", "_dmarc.news"]);
 });
 
 test("co.uk and com.au are suffixes: the zone is the domain under them", () => {
-	assert.deepEqual(
-		listRecords(postshibaDomain("example.co.uk")).map(({ host }) => host),
-		["ps1._domainkey", "rp", "news", "_dmarc"]
-	);
-	assert.deepEqual(
-		listRecords(postshibaDomain("news.example.co.uk", "read.news.example.co.uk")).map(({ host }) => host),
-		["ps1._domainkey.news", "rp.news", "read.news", "_dmarc.news"]
-	);
-	assert.deepEqual(
-		listRecords(postshibaDomain("mail.example.com.au")).map(({ host }) => host),
-		["ps1._domainkey.mail", "rp.mail", "news.mail", "_dmarc.mail"]
-	);
+	assert.deepEqual(listRecords(postshibaDomain("example.co.uk")).map(({ host }) => host), ["ps1._domainkey", "rp", "_dmarc"]);
+	assert.deepEqual(listRecords(postshibaDomain("news.example.co.uk")).map(({ host }) => host), ["ps1._domainkey.news", "rp.news", "_dmarc.news"]);
+	assert.deepEqual(listRecords(postshibaDomain("mail.example.com.au")).map(({ host }) => host), ["ps1._domainkey.mail", "rp.mail", "_dmarc.mail"]);
 });
 
 test("a record at the zone's root is @, and a name outside the zone stays whole", () => {

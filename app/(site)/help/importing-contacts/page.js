@@ -1,15 +1,19 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
 import { FIRST_SEND, isCloud } from "@/lib/config";
 import { MAX_CONTACT_FIELDS } from "@/lib/contact-fields";
 import { MAX_IMPORT_ROWS } from "@/lib/csv-import";
+import { isSpamListEnabled } from "@/lib/domain-reputation";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { CONSENT_TEXT } from "@/lib/import-checks";
+import { siteExtensions } from "@/lib/site-extensions";
 
 export const metadata = getHelpPageMetadata("importing-contacts");
 
 export default function ImportingContactsPage() {
+	const guides = isCloud() ? siteExtensions.importGuides : [];
 	return (
 		<ArticleHelp slug="importing-contacts">
 			<h2 id="export">Export from your current platform</h2>
@@ -18,10 +22,22 @@ export default function ImportingContactsPage() {
 				<LinkApp href="/contacts">Contacts page</LinkApp>, click Import contacts and choose the file, or drop it anywhere on the page.
 				{isCloud() && " Importing needs a plan."}
 			</p>
+			{guides.length > 0 && (
+				<p>
+					The import window links a guide to exporting your list from{" "}
+					{guides.map(({ brand, name, href }, index) => (
+						<Fragment key={brand}>
+							{index > 0 && (index === guides.length - 1 ? " and " : ", ")}
+							<Link href={href}>{name}</Link>
+						</Fragment>
+					))}
+					.
+				</p>
+			)}
 			<p>
-				From beehiiv: open{" "}
+				From beehiiv: open Settings, then{" "}
 				<a href="https://app.beehiiv.com/settings/publication/export_data" target="_blank" rel="noopener">
-					Settings, then Export data
+					Export data
 				</a>
 				, and under Export subscribers (full version), click Export all subscribers, so custom fields, tags and stats come along.
 				beehiiv emails you the file; it&apos;s also under Historical exports on that page, with a Download link. The quick version
@@ -95,7 +111,11 @@ export default function ImportingContactsPage() {
 			<p>The import checks each address and leaves out, with a count for each reason:</p>
 			<ul>
 				<li>invalid addresses, and misspelled domains like gmial.com;</li>
-				<li>spam traps, throwaway inboxes and role addresses like info@ or support@;</li>
+				<li>
+					spam traps, role addresses like info@ or support@, and throwaway inboxes, from a list of thousands of throwaway services
+					updated every day;
+				</li>
+				{(isCloud() || isSpamListEnabled()) && <li>known spam domains, from StopForumSpam&apos;s list;</li>}
 				<li>duplicates in the file, and addresses on domains that can&apos;t receive email;</li>
 				<li>people who unsubscribed, bounced or complained before, even if you deleted them since;</li>
 				<li>addresses MailCheap knows can&apos;t receive email, because they bounced or hit a spam trap for any sender.</li>
@@ -107,8 +127,8 @@ export default function ImportingContactsPage() {
 
 			<h2 id="after">After the import</h2>
 			<p>
-				The first time you send to contacts who never got an email from you, a slice of them goes first and the rest follows{" "}
-				{FIRST_SEND.waitMinutes / 60} hours later if the slice looks clean.{" "}
+				The first time you send to contacts who never got an email from you, they get it in steps {FIRST_SEND.waitMinutes} minutes
+				apart, each one only if the ones before bounced little.{" "}
 				<Link href={getHelpHref("sending", "first-send")}>First sends in steps</Link>
 			</p>
 			{isCloud() && (

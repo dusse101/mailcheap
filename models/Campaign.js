@@ -1,32 +1,11 @@
 import mongoose from "mongoose";
 import { accountScoped } from "../lib/account-scope.js";
+import { contentReviewSchema } from "../lib/content-review-schema.js";
+import { PUBLISH_TARGETS } from "../lib/publish-to.js";
 
 export const CAMPAIGN_STATUSES = ["draft", "scheduled", "sending", "paused", "sent", "canceled"];
 
 const counter = { type: Number, default: 0 };
-
-// The automated content check before a send (lib/content-review.js), for the content it read (hash), and an admin's
-// decision when it held the send. Never read unless asked for (select: false): its reasons are for admins only.
-const reviewSchema = new mongoose.Schema(
-	{
-		hash: { type: String },
-		outcome: { type: String, enum: ["allow", "flag", "block", "error"] },
-		verdict: { type: String },
-		categories: { type: [String], default: undefined },
-		reasons: { type: [String], default: undefined },
-		confidence: { type: Number },
-		scores: { type: Map, of: Number },
-		model: { type: String },
-		checkedAt: { type: Date },
-		// Another of the account's issues with the same content and rules, whose check (or approval) this one reuses.
-		reusedFrom: { type: mongoose.Schema.Types.ObjectId },
-		decision: { type: String, enum: ["approved", "rejected"] },
-		decidedBy: { type: String },
-		decidedAt: { type: Date },
-		note: { type: String },
-	},
-	{ _id: false }
-);
 
 const campaignSchema = new mongoose.Schema(
 	{
@@ -39,6 +18,9 @@ const campaignSchema = new mongoose.Schema(
 		markdown: { type: String, default: "" },
 		html: { type: String, default: "" },
 		status: { type: String, enum: CAMPAIGN_STATUSES, default: "draft" },
+		// By email and on the website, by email only, or on the website only (lib/publish-to.js). Web only sends nothing:
+		// it goes straight to sent, with no messages.
+		publishTo: { type: String, enum: PUBLISH_TARGETS, default: "both" },
 		// Why a send paused itself; a code from lib/account-state.js when the account or plan stopped it.
 		pauseReason: { type: String },
 		pauseCode: { type: String },
@@ -50,9 +32,12 @@ const campaignSchema = new mongoose.Schema(
 		// Only this segment's active contacts get it, its conditions read at each send (lib/segments.js). Without one,
 		// every active contact does.
 		segmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Segment" },
-		// Contacts never mailed before go out in steps: a first slice, a check, then the rest (lib/first-send.js), over
-		// restHours in a spread send.
+		// Contacts never mailed before go out in steps (lib/first-send.js): how many each step sends, the last the rest,
+		// the step out so far, the first's size, how many still wait, when the next check is, and when the last one passed.
+		// Sends from before had a single slice, and restHours in a spread send.
 		firstSend: {
+			steps: { type: [Number], default: undefined },
+			step: { type: Number },
 			slice: { type: Number },
 			held: { type: Number },
 			checkAt: { type: Date },
@@ -62,12 +47,12 @@ const campaignSchema = new mongoose.Schema(
 		source: { type: String, default: "dashboard" },
 		scheduledAt: { type: Date },
 		startedAt: { type: Date },
-		// A send spread over hours (lib/send-spread.js): about when its last batch goes out, and the hours its size gave
-		// it next to the account's proven volume, kept for its resumes. Each next step gets its own.
+		// A send that doesn't go out at once: about when its last email goes, its first-send steps' checks or a new
+		// domain's later day for Gmail included (lib/sending.js). spreadHours: the hours sends from before were spread over.
 		sendingUntil: { type: Date },
 		spreadHours: { type: Number },
 		sentAt: { type: Date },
-		// When its latest step finished going out: a day later, it counts toward the account's proven volume.
+		// When its latest step finished going out.
 		finishedAt: { type: Date },
 		testSentAt: { type: Date },
 		archiveSlug: { type: String, trim: true, lowercase: true },
@@ -78,7 +63,10 @@ const campaignSchema = new mongoose.Schema(
 		archivePinned: { type: Boolean, default: false },
 		// Archive page views, once per browser and day.
 		webViews: { type: Number, default: 0 },
-		review: { type: reviewSchema, select: false },
+		// The content check before a send, of the content it read.
+		review: { type: contentReviewSchema, select: false },
+		// The same check at the review step, before any send: a send of the content it read uses it as its own.
+		draftReview: { type: contentReviewSchema, select: false },
 		stats: {
 			recipients: counter,
 			sent: counter,

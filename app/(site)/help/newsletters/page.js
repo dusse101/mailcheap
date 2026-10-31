@@ -2,15 +2,18 @@ import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, getCleanupDefaults } from "@/lib/cleanup";
-import { getSharedDomain, isCloud } from "@/lib/config";
+import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
 import { formatWindow } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
+import { INBOX_CHECK_LIMIT } from "@/lib/inbox-check";
 import { MAX_NEWSLETTERS_PER_ACCOUNT, SLUG_CHANGES } from "@/lib/newsletters";
+import { SUMMARY_BARS, SUMMARY_HOUR } from "@/lib/summary";
 
 export const metadata = getHelpPageMetadata("newsletters");
 
 export default function NewslettersPage() {
 	const sharedDomain = getSharedDomain();
+	const hasOwnHost = Boolean(getArchiveCnameTarget());
 	const cleanup = getCleanupDefaults();
 
 	return (
@@ -36,7 +39,8 @@ export default function NewslettersPage() {
 					<strong>Slug</strong>: lowercase letters, digits and dashes.
 					{sharedDomain
 						? ` Your shared address (hello@slug.${sharedDomain}) and your website (slug.${sharedDomain}) follow it, so changing it moves them.`
-						: " Your website's address follows it."}{" "}
+						: " Your website's address follows it."}
+					{hasOwnHost && " A website on your own domain stays there."}{" "}
 					A few names like www, api or mail are kept by MailCheap. An account changes slugs {SLUG_CHANGES.limit} times{" "}
 					{formatWindow(SLUG_CHANGES.window)} at most.
 				</li>
@@ -69,8 +73,13 @@ export default function NewslettersPage() {
 			<p>
 				Each newsletter has a public website with a page for each issue and a signup form. It&apos;s on for new newsletters and goes
 				live after your first issue. On the <LinkApp href="/newsletters/website">Website page</LinkApp>, you set its description (one
-				sentence under the name and in the subscribe popup), your author bio and photo, and your social links.{" "}
-				<Link href={getHelpHref("website")}>Website and signups</Link>
+				sentence under the name and in the subscribe popup), your author bio and photo, and your social links
+				{hasOwnHost && (
+					<>
+						, and you can put it on <Link href={getHelpHref("website", "own-domain")}>your own domain</Link>
+					</>
+				)}
+				. <Link href={getHelpHref("website")}>Website and signups</Link>
 			</p>
 
 			<h2 id="confirm-signups">Confirm new signups</h2>
@@ -83,6 +92,13 @@ export default function NewslettersPage() {
 				The built-in confirmation email follows your newsletter&apos;s name and description. On the{" "}
 				<LinkApp href="/newsletters/signups">Confirm signups page</LinkApp>, you can write your own subject, preview text and content,
 				as long as it keeps the button.
+				{isCloud() && (
+					<>
+						{" "}
+						Like issues, it goes through the <Link href={getHelpHref("sending", "content-check")}>content check</Link>: while
+						it&apos;s in review, new subscribers get the built-in one.
+					</>
+				)}
 			</p>
 			<p>
 				New subscribers get the confirmation email or your welcome email, not both. Turning on double opt-in while the welcome email
@@ -102,6 +118,13 @@ export default function NewslettersPage() {
 				<LinkApp href="/newsletters/welcome">Welcome email page</LinkApp>.
 				While double opt-in is on, new subscribers get the confirmation email instead: turning the welcome email on turns double
 				opt-in off when you save, and the page says so first.
+				{isCloud() && (
+					<>
+						{" "}
+						Like issues, it goes through the <Link href={getHelpHref("sending", "content-check")}>content check</Link>: while
+						it&apos;s in review, new subscribers don&apos;t get it.
+					</>
+				)}
 			</p>
 			{isCloud() && (
 				<p>
@@ -132,6 +155,40 @@ export default function NewslettersPage() {
 				<LinkApp href="/newsletters/design">Design page</LinkApp>, then change it as you like.{" "}
 				<Link href={getHelpHref("design")}>Design and themes</Link>
 			</p>
+
+			{isCloud() && (
+				<>
+					<h2 id="notifications" data-cloud>Notifications</h2>
+					<p>
+						What MailCheap emails you about the newsletter, set on its <LinkApp href="/newsletters/notifications">Notifications page</LinkApp>.
+						With a paid plan, that&apos;s a summary of its numbers every Monday at {SUMMARY_HOUR} AM, your time: who joined and who left
+						against the week before, your total, new subscribers over the last {SUMMARY_BARS.weekly} weeks, and your latest
+						issue&apos;s opens and clicks against your average, with its most clicked link.
+					</p>
+					<p>
+						Each newsletter has its own summary: pick Weekly, Daily for yesterday&apos;s numbers every morning, which skips the days
+						with no news, or Off. Preview there shows the next one. The link at the bottom of each summary changes it without signing
+						in, and your mail app&apos;s Unsubscribe button turns it off in one click. &quot;Your time&quot; is your browser&apos;s, the
+						last time you opened the dashboard. Summaries don&apos;t count toward your plan&apos;s emails.
+					</p>
+					<p>
+						Share this week opens a page with your newsletter&apos;s name and its own totals, never a subscriber, to post on X or
+						LinkedIn. <Link href="/docs/api#get-summary">Get a summary</Link> in the API returns the same numbers.
+					</p>
+
+					<h2 id="inbox-check" data-cloud>Getting MailCheap&apos;s emails in your inbox</h2>
+					<p>
+						MailCheap only emails you about your account, like a campaign that needs you or your summary, never for marketing. To
+						keep those out of spam, once you have a plan and your newsletter&apos;s get-started list is closed or done, a card at the
+						bottom right of the <LinkApp href="/">dashboard</LinkApp> sends you an email from MailCheap: reply to it with anything,
+						and your mail app files MailCheap&apos;s next emails in your inbox. If it lands in spam, mark it as not spam too.
+					</p>
+					<p>
+						It goes to your account&apos;s address, {INBOX_CHECK_LIMIT.limit} times a day at most. Closing the card, or Done once
+						you&apos;ve replied, hides it for that newsletter, on every device.
+					</p>
+				</>
+			)}
 		</ArticleHelp>
 	);
 }

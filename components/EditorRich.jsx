@@ -1,26 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useImperativeHandle, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import FileHandler from "@tiptap/extension-file-handler";
 import { Placeholder } from "@tiptap/extensions";
 import StarterKit from "@tiptap/starter-kit";
+import { HtmlBlock } from "@/components/BlockHtml";
 import DialogImagePicker from "@/components/DialogImagePicker";
+import MenuButton from "@/components/MenuButton";
 import MenuFormat from "@/components/MenuFormat";
 import MenuImage from "@/components/MenuImage";
 import { SlashCommand } from "@/components/MenuSlash";
+import TooltipMergeTag from "@/components/TooltipMergeTag";
 import { BlockHandle } from "@/lib/editor-block-handle";
+import { ButtonBlock, findButton } from "@/lib/editor-button";
 import { Callout } from "@/lib/editor-callout";
+import { findWords } from "@/lib/editor-find";
 import { ImageAligned } from "@/lib/editor-image";
 import { MergeTags } from "@/lib/editor-merge-tags";
+import { UndoDelete } from "@/lib/editor-undo-delete";
 import { toast } from "@/lib/toast";
 import { IMAGE_TYPES, IMAGE_TYPE_ERROR, getDisplaySize, prepareImage, uploadImage } from "@/lib/upload-image";
 import { useFileDropGuard } from "@/lib/use-file-drop";
 
 const MIN_HEIGHT = "min-h-[560px]";
 
-export default function EditorRich({ content, onChange }) {
+// contactFields: the account's fields, whose tags the editor draws as placeholders and its slash menu inserts.
+// newsletter: whose email design HTML blocks preview in, and whose button colors and corners buttons show.
+// ref: select(words), which selects the first place the issue has them and says whether it found one.
+export default function EditorRich({ ref, content, onChange, contactFields = [], newsletter = null }) {
 	const [isEditingLink, setIsEditingLink] = useState(false);
+	const [isEditingButtonLink, setIsEditingButtonLink] = useState(false);
 	const [isPickingImage, setIsPickingImage] = useState(false);
 	const editor = useEditor({
 		immediatelyRender: false,
@@ -42,8 +52,11 @@ export default function EditorRich({ content, onChange }) {
 				},
 			}),
 			Callout,
+			ButtonBlock.configure({ newsletter, onEditLink: () => setIsEditingButtonLink(true) }),
+			HtmlBlock.configure({ newsletter }),
 			BlockHandle,
-			MergeTags,
+			UndoDelete,
+			MergeTags.configure({ contactFields }),
 			Placeholder.configure({
 				placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or press / for commands"),
 			}),
@@ -53,14 +66,15 @@ export default function EditorRich({ content, onChange }) {
 				onDrop: (current, files, position) => insertImages(current, files, position),
 				onPaste: (current, files) => insertImages(current, files),
 			}),
-			SlashCommand.configure({ onPickImage: () => setIsPickingImage(true) }),
+			SlashCommand.configure({ onPickImage: () => setIsPickingImage(true), contactFields }),
 		],
 		editorProps: {
 			// With a mouse, the left padding holds the blocks' drag handle (lib/editor-block-handle.js).
 			attributes: { class: `prose-issue ${MIN_HEIGHT} px-5 py-5 outline-none [@media(pointer:fine)]:pl-12`, "aria-label": "Content" },
+			// In a button, ⌘K opens the button's own link (lib/editor-button.js).
 			handleKeyDown: (view, event) => {
 				const isLinkShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
-				if (!isLinkShortcut || view.state.selection.empty) return false;
+				if (!isLinkShortcut || view.state.selection.empty || findButton(view.state)) return false;
 				setIsEditingLink(true);
 				return true;
 			},
@@ -76,6 +90,7 @@ export default function EditorRich({ content, onChange }) {
 		onUpdate: ({ editor: current }) => onChange(current.getHTML()),
 	});
 	useFileDropGuard();
+	useImperativeHandle(ref, () => ({ select: (words) => Boolean(editor && selectWords(editor, words)) }), [editor]);
 
 	if (!editor) return <div className={MIN_HEIGHT} />;
 
@@ -83,7 +98,9 @@ export default function EditorRich({ content, onChange }) {
 		<>
 			<EditorContent editor={editor} className="relative" />
 			<MenuFormat editor={editor} isEditingLink={isEditingLink} onEditLink={setIsEditingLink} />
+			<MenuButton editor={editor} isEditingLink={isEditingButtonLink} onEditLink={setIsEditingButtonLink} />
 			<MenuImage editor={editor} />
+			<TooltipMergeTag editor={editor} contactFields={contactFields} />
 			<DialogImagePicker
 				open={isPickingImage}
 				onOpenChange={setIsPickingImage}
@@ -91,6 +108,16 @@ export default function EditorRich({ content, onChange }) {
 			/>
 		</>
 	);
+}
+
+// Centered on the screen, where the editor's own scrolling would leave the words at its edge, under the page's header.
+function selectWords(editor, words) {
+	const found = findWords(editor.state.doc, words);
+	if (!found || editor.isDestroyed) return false;
+	editor.chain().focus(null, { scrollIntoView: false }).setTextSelection(found).run();
+	const { node } = editor.view.domAtPos(found.from);
+	(node.nodeType === Node.TEXT_NODE ? node.parentElement : node)?.scrollIntoView({ block: "center" });
+	return true;
 }
 
 // Where the slash command was typed: the editor keeps its selection while the picker has focus.

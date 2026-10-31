@@ -1,32 +1,40 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Plus, Rows3, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { createContactField, deleteContactField } from "@/app/(app)/contacts/actions";
+import ButtonMergeTag from "@/components/ButtonMergeTag";
+import LinkHelpFields from "@/components/LinkHelpFields";
 import { useContactOptions } from "@/components/ProviderContactOptions";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FIELD_TYPES, MAX_CONTACT_FIELDS, MAX_FIELD_LABEL } from "@/lib/contact-fields";
+import { SAMPLE_FIRST_NAME, fieldTag, firstNameTag } from "@/lib/merge-tags";
 import { toast } from "@/lib/toast";
 
 // The account's own contact fields, shared by its newsletters: add one, or delete one (contacts keep their values).
-export default function DialogContactFields() {
+// onCloseAutoFocus: where the focus goes back, as what opened it is outside the dialog.
+export default function DialogContactFields({ isOpen, onOpenChange, onCloseAutoFocus }) {
 	const { fields } = useContactOptions();
 
 	return (
-		<Dialog>
-			<DialogTrigger asChild>
-				<Button variant="outline">
-					<Rows3 data-icon="inline-start" />
-					Fields
-				</Button>
-			</DialogTrigger>
-			<DialogContent className="sm:max-w-md">
+		<Dialog open={isOpen} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
 				<DialogHeader>
 					<DialogTitle>Contact fields</DialogTitle>
-					<DialogDescription>Every contact has a first name and tags. Add your own, like a company or a birthday.</DialogDescription>
+					<DialogDescription className="text-pretty">
+						Every contact has a first name and tags. Add your own, like a company or a birthday. In your emails, a field between
+						double braces prints each reader&apos;s own value:
+					</DialogDescription>
+					<div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5 text-sm">
+						<span className="text-xs text-muted-foreground">You write</span>
+						<code className="truncate font-mono text-[13px]">Hi {firstNameTag("")},</code>
+						<span className="text-xs text-muted-foreground">{SAMPLE_FIRST_NAME} gets</span>
+						<span className="truncate">Hi {SAMPLE_FIRST_NAME},</span>
+					</div>
+					<LinkHelpFields className="self-start text-sm" />
 				</DialogHeader>
 
 				{fields.length > 0 && (
@@ -60,10 +68,9 @@ function RowField({ field }) {
 		<li className="flex items-center gap-3 py-2 pr-1.5 pl-3 animate-enter">
 			<span className="min-w-0 flex-1">
 				<span className="block truncate text-sm font-medium">{field.label}</span>
-				<span className="block truncate text-xs text-muted-foreground">
-					{FIELD_TYPES[field.type]?.label} · <code className="font-mono">{field.key}</code>
-				</span>
+				<span className="block truncate text-xs text-muted-foreground">{FIELD_TYPES[field.type]?.label}</span>
 			</span>
+			<ButtonMergeTag tag={fieldTag(field.key)} className="max-w-[65%] shrink-0" />
 			<Button
 				type="button"
 				variant="ghost"

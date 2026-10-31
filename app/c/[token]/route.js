@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { isBlocked } from "@/lib/account-state";
+import { readCountry } from "@/lib/countries";
 import { findTrackedMessage, recordEngagement } from "@/lib/email-events";
 import { escapeHtml } from "@/lib/render-email";
 import { readClickToken } from "@/lib/tracking";
@@ -56,8 +57,9 @@ export async function GET(request, { params }) {
 	if (isBlocked(message?.account)) return new Response(DISABLED_PAGE, DISABLED);
 
 	const userAgent = request.headers.get("user-agent") ?? "";
+	const country = readCountry(request.headers);
 	after(() =>
-		recordEngagement({ message, type: "Click", userAgent, url: link.url }).catch((error) =>
+		recordEngagement({ message, type: "Click", userAgent, url: link.url, country }).catch((error) =>
 			console.error("[tracking] Click not recorded:", error)
 		)
 	);

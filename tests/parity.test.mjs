@@ -19,6 +19,8 @@ const ALLOWED_IMPORTS = new Set([
 	"@/lib/actions/dashboard",
 	"@/lib/selected-newsletter",
 	"@/lib/newsletter-sections",
+	// The hash a contact's picture comes from, of an address the action answered with.
+	"@/lib/gravatar",
 ]);
 const VIEW_ACTIONS = new Set(["selectNewsletter"]);
 const SEND_TOOLS = ["schedule_campaign", "send_campaign", "send_campaign_to_more", "resume_campaign"];

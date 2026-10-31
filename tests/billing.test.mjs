@@ -26,6 +26,8 @@ const PRICES = {
 	mailcheap_pro_yearly: price("mailcheap_pro_yearly", 79_000, "year"),
 	mailcheap_max_monthly: price("mailcheap_max_monthly", 34_900, "month"),
 	mailcheap_max_yearly: price("mailcheap_max_yearly", 349_000, "year"),
+	mailcheap_ultra_monthly: price("mailcheap_ultra_monthly", 79_900, "month"),
+	mailcheap_ultra_yearly: price("mailcheap_ultra_yearly", 799_000, "year"),
 };
 
 function subscription({ id, accountId, customer, status = "active", lookupKey = "mailcheap_starter_monthly", start = NOW, end = NOW + 30 * DAY, ...rest }) {
@@ -192,18 +194,20 @@ describe("checkout", () => {
 		assert.equal(calls.some(({ path }) => path === "/v1/checkout/sessions"), false);
 		assert.deepEqual(
 			(await m.stripe.findPlansOnSale()).map(({ id }) => id),
-			["starter", "growth", "max"]
+			["starter", "growth", "max", "ultra"]
 		);
 	});
 
-	test("Max opens Checkout with its own prices, like any plan on sale", async () => {
+	test("Max and Ultra open Checkout with their own prices, like any plan on sale", async () => {
 		const user = await signIn("max-checkout@example.com");
-		for (const [interval, lookupKey] of [
-			["year", "mailcheap_max_yearly"],
-			["month", "mailcheap_max_monthly"],
-		]) {
-			assert.equal(await as(user, () => catchRedirect(m.billing.choosePlan(form({ plan: "max", interval })))), "https://checkout.stripe.com/c/pay/cs_test_1");
-			assert.equal(calls.findLast(({ path }) => path === "/v1/checkout/sessions").body.get("line_items[0][price]"), `price_${lookupKey}`);
+		for (const plan of ["max", "ultra"]) {
+			for (const [interval, period] of [
+				["year", "yearly"],
+				["month", "monthly"],
+			]) {
+				assert.equal(await as(user, () => catchRedirect(m.billing.choosePlan(form({ plan, interval })))), "https://checkout.stripe.com/c/pay/cs_test_1");
+				assert.equal(calls.findLast(({ path }) => path === "/v1/checkout/sessions").body.get("line_items[0][price]"), `price_mailcheap_${plan}_${period}`);
+			}
 		}
 	});
 
@@ -339,24 +343,31 @@ describe("subscription changes", () => {
 	});
 });
 
-describe("Max", () => {
-	test("a subscription to Max's prices gives the account Max and its limits, and get_billing says so", async () => {
-		const user = await signIn("max-webhook@example.com");
-		subscriptions.set("sub_max", subscription({ id: "sub_max", accountId: user.accountId, customer: "cus_max", lookupKey: "mailcheap_max_yearly", end: NOW + 365 * DAY }));
-		assert.deepEqual(await deliver("customer.subscription.created", { id: "sub_max" }), { status: 200, body: { received: true, updated: true, status: "active" } });
+describe("Max and Ultra", () => {
+	for (const [plan, name, yearlyPrice, emails, subscribers] of [
+		["max", "Max", 3490, 2_000_000, 1_000_000],
+		["ultra", "Ultra", 7990, 5_000_000, 2_500_000],
+	]) {
+		test(`a subscription to ${name}'s prices gives the account ${name} and its limits, and get_billing says so`, async () => {
+			const user = await signIn(`${plan}-webhook@example.com`);
+			const id = `sub_${plan}`;
+			const customer = `cus_${plan}`;
+			subscriptions.set(id, subscription({ id, accountId: user.accountId, customer, lookupKey: `mailcheap_${plan}_yearly`, end: NOW + 365 * DAY }));
+			assert.deepEqual(await deliver("customer.subscription.created", { id }), { status: 200, body: { received: true, updated: true, status: "active" } });
 
-		const paid = await account(user);
-		assert.deepEqual([paid.plan, paid.interval, paid.subscriptionStatus], ["max", "year", "active"]);
-		assert.deepEqual(m.plans.getAccountLimits(paid), { emails: 2_000_000, subscribers: 1_000_000 });
-		const { key } = await createKey(user, "Max");
-		const billing = await callApi("GET", "/api/v1/billing", { key });
-		assert.deepEqual(billing.body.plan, { id: "max", name: "Max", interval: "year", price: 3490 });
-		assert.deepEqual([billing.body.usage.emailsLimit, billing.body.usage.subscribersLimit], [2_000_000, 1_000_000]);
+			const paid = await account(user);
+			assert.deepEqual([paid.plan, paid.interval, paid.subscriptionStatus], [plan, "year", "active"]);
+			assert.deepEqual(m.plans.getAccountLimits(paid), { emails, subscribers });
+			const { key } = await createKey(user, name);
+			const billing = await callApi("GET", "/api/v1/billing", { key });
+			assert.deepEqual(billing.body.plan, { id: plan, name, interval: "year", price: yearlyPrice });
+			assert.deepEqual([billing.body.usage.emailsLimit, billing.body.usage.subscribersLimit], [emails, subscribers]);
 
-		subscriptions.set("sub_max", subscription({ id: "sub_max", accountId: user.accountId, customer: "cus_max", lookupKey: "mailcheap_growth_monthly" }));
-		await deliver("customer.subscription.updated", { id: "sub_max" });
-		assert.equal((await account(user)).plan, "growth", "and a change away from it too");
-	});
+			subscriptions.set(id, subscription({ id, accountId: user.accountId, customer, lookupKey: "mailcheap_growth_monthly" }));
+			await deliver("customer.subscription.updated", { id });
+			assert.equal((await account(user)).plan, "growth", "and a change away from it too");
+		});
+	}
 });
 
 describe("invoice.paid", () => {

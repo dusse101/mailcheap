@@ -13,6 +13,7 @@ export default function AvatarContact({ email, gravatarHash, size = 24 }) {
 
 	return (
 		<span
+			aria-hidden="true"
 			style={{
 				width: size,
 				height: size,

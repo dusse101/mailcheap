@@ -76,3 +76,41 @@ export async function saveTheme(newsletterId, theme) {
 	revalidatePath("/newsletters", "layout");
 	return { ok: true, theme: output.theme };
 }
+
+// Notifications (CardSummaryEmail): each choice saves as it's made.
+export async function saveNotifications(newsletterId, notifications) {
+	const { output, failure } = await runDashboardAction("update_newsletter", { id: String(newsletterId ?? ""), notifications });
+	if (failure) return toFormError(failure);
+	revalidatePath(SETTINGS_PATH, "layout");
+	return { ok: true, notifications: output.notifications };
+}
+
+export async function previewSummaryEmail(newsletterId) {
+	const { output, failure } = await runDashboardAction("preview_summary_email", { newsletter: String(newsletterId ?? "") });
+	return failure ? toFormError(failure) : { html: output.html, subject: output.subject, previewText: output.previewText };
+}
+
+// The inbox check at the dashboard's bottom right (CardInboxCheck): an email to the signed-in owner, to reply to.
+export async function sendInboxCheck() {
+	const { output, failure } = await runDashboardAction("send_inbox_check_email", {});
+	return failure ? toFormError(failure) : { sentTo: output.sentTo };
+}
+
+// The website's own domain (CardWebsiteDomain). Each answer reloads the page, which shows the records and their status.
+export async function setWebsiteDomain(newsletterId, host) {
+	const { output, failure } = await runDashboardAction("set_website_domain", { id: String(newsletterId ?? ""), host: String(host ?? "") });
+	revalidatePath(SETTINGS_PATH, "layout");
+	return failure ? toFormError(failure) : { ok: true, live: output.live };
+}
+
+export async function checkWebsiteDomain(newsletterId) {
+	const { output, failure } = await runDashboardAction("check_website_domain", { id: String(newsletterId ?? "") });
+	revalidatePath(SETTINGS_PATH, "layout");
+	return failure ? toFormError(failure) : { ok: true, live: output.live, pointed: output.pointed };
+}
+
+export async function removeWebsiteDomain(newsletterId) {
+	const { output, failure } = await runDashboardAction("remove_website_domain", { id: String(newsletterId ?? "") });
+	revalidatePath(SETTINGS_PATH, "layout");
+	return failure ? toFormError(failure) : { ok: true, removed: output.removed };
+}

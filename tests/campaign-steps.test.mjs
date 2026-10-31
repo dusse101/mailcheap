@@ -71,7 +71,19 @@ test("sending now stops on a failing check, nobody to send to, or the plan's ema
 	const [overPlan] = getSendProblems({ ...READY, emailsLeft: 100 });
 	assert.equal(overPlan.message, "Your plan has 100 emails left this month");
 	assert.equal(overPlan.fix.href, "/billing");
+	assert.equal(overPlan.isAccount, true, "above the send step with the account's problems, not only when the button is pressed");
 	assert.deepEqual(getSendProblems({ ...READY, emailsLeft: 240 }), []);
+});
+
+test("with none of the plan's emails left, the plan's own check is the one problem", () => {
+	const usedUp = { id: "plan", message: "This month's emails are used up", isAccount: true };
+	assert.deepEqual(messages(getSendProblems({ ...READY, blocking: [usedUp], emailsLeft: 0 })), ["This month's emails are used up"]);
+	assert.deepEqual(
+		messages(getSendProblems({ ...READY, blocking: [{ ...usedUp, message: "Over your plan's subscriber limit" }], emailsLeft: 10 })),
+		["Over your plan's subscriber limit", "Your plan has 10 emails left this month"],
+		"some left: both show"
+	);
+	assert.deepEqual(messages(getSendProblems({ ...READY, emailsLeft: 0 })), ["Your plan has 0 emails left this month"], "without the check, it still stops");
 });
 
 test("every problem shows at once, the checks' first", () => {

@@ -44,6 +44,7 @@ const contactImportSchema = new mongoose.Schema(
 			trap: counter,
 			role: counter,
 			disposable: counter,
+			spamDomain: counter,
 			duplicate: counter,
 			suppressed: counter,
 			undeliverable: counter,

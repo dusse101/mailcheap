@@ -1,111 +1,111 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
 import LinkApp from "@/components/LinkApp";
-import { FIRST_SEND, WARMUP } from "@/lib/config";
-import { formatCount, formatNumber } from "@/lib/format";
+import { BACKOFF, FIRST_SEND, SENDER_WARMUP, getSharedDomain } from "@/lib/config";
+import { getFirstSendSteps } from "@/lib/first-send";
+import { formatCount, formatNumber, formatPercent } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
-import { getAllowance, getPaceHours } from "@/lib/send-spread";
 
 export const metadata = getHelpPageMetadata("warm-up");
 
-// A new account's first issue to contacts it never emailed, paced the way the send step says it.
-const FIRST_ISSUES = [WARMUP.quickEmails, 1_000, 5_000, 20_000];
-const NEW_ACCOUNT = { proven: 0, recent: 0, warmup: { day: 1 } };
+// New contacts of a few list sizes, and the steps they go in.
+const EXAMPLE_LISTS = [1_000, 10_000, 50_000];
 
 export default function WarmupPage() {
-	const afterClean = Math.floor(getAllowance({ proven: 1_000, day: 2 }) / 100) * 100;
+	const sharedDomain = getSharedDomain();
+	const [firstStep, secondStep] = FIRST_SEND.steps;
+	const wait = formatCount(FIRST_SEND.waitMinutes, "minute");
 
 	return (
 		<ArticleHelp slug="warm-up">
-			<h2 id="what">What warming up means</h2>
+			<h2 id="why">Why a send doesn&apos;t always go out at once</h2>
 			<p>
-				Inboxes like Gmail, Yahoo and Outlook watch how a new sender&apos;s volume grows. A new account that sends thousands of emails
-				at once looks like a spammer and lands in spam. One whose volume grows step by step, with few bounces and complaints, earns a
-				reputation that gets its emails to the inbox.
+				Gmail, Yahoo and Outlook decide what lands in the inbox from what they&apos;ve seen of a sender: how many of its emails
+				bounce, how many people mark them as spam, and how fast its volume grows. MailCheap sends in a way that keeps your newsletter
+				on their good side, so your emails reach the inbox.
 			</p>
 			<p>
-				So for the {WARMUP.days} days after its first campaign, your account sends gradually: each send goes out at full speed up to
-				what your account has shown it can send cleanly, and a bigger one is spread over a few hours. If a list has a problem, it shows
-				in the first hours instead of in every inbox.
+				Most issues go out at once. Two kinds go a little slower, and the send step tells you before you send: new contacts, and a
+				new domain&apos;s Gmail readers.
 			</p>
 
-			<h2 id="pace">How a send&apos;s pace is set</h2>
-			<ul>
-				<li>
-					<strong>From the start, up to {formatNumber(WARMUP.quickEmails)} emails go out at once.</strong>
-				</li>
-				<li>
-					<strong>Your proven volume</strong> is your largest campaign of the last {WARMUP.provenDays} days whose bounces and
-					complaints stayed low, counted a day after it went out, once they&apos;ve come in.
-				</li>
-				<li>
-					<strong>A send goes out at once</strong> up to your proven volume times {WARMUP.growth.first} on the first day of the
-					warm-up. That multiplier grows a little each day, to {WARMUP.growth.last} on day {WARMUP.days}.
-				</li>
-				<li>
-					<strong>A bigger send goes out over {formatCount(WARMUP.minHours, "hour")}</strong>, plus {WARMUP.hoursPerDoubling} for each
-					time it doubles that, {formatCount(WARMUP.maxHours / 24, "day")} at most. Its first emails leave right away, the last ones at
-					the end, the others evenly between.
-				</li>
-				<li>
-					<strong>Sends count together</strong>: what your other sends still have to send, or sent in the last{" "}
-					{formatCount(WARMUP.recentHours, "hour")}, adds to a new one, so splitting a send doesn&apos;t make it faster.
-				</li>
-			</ul>
+			<h2 id="steps">New contacts in steps</h2>
 			<p>
-				For example, a day after a clean send to 1,000 contacts, a send of up to about {formatNumber(afterClean)} goes out at once. A
-				new account&apos;s first issue, to contacts it never emailed, goes out over:
+				The first time you email contacts who never got an email from you, like a list you just imported, they get the issue in
+				steps, {wait} apart: {formatPercent(firstStep.share)} of them first, then {formatPercent(secondStep.share)} more, then the
+				rest. Each step goes only if the ones before have few bounces and spam complaints. Most bounces come back within minutes,
+				so a list with bad addresses stops after a few hundred emails, before it hurts your sending reputation.
 			</p>
 			<table>
 				<thead>
 					<tr>
-						<th>First issue to</th>
-						<th>Goes out over</th>
+						<th>New contacts</th>
+						<th>Steps</th>
 					</tr>
 				</thead>
 				<tbody>
-					{FIRST_ISSUES.map((emails) => {
-						const hours = getPaceHours(NEW_ACCOUNT, { emails, newContacts: emails });
-						return (
-							<tr key={emails}>
-								<td>{formatCount(emails, "contact")}</td>
-								<td>{hours ? `About ${formatCount(hours, "hour")}` : "At once"}</td>
-							</tr>
-						);
-					})}
+					{EXAMPLE_LISTS.map((contacts) => (
+						<tr key={contacts}>
+							<td>{formatNumber(contacts)}</td>
+							<td>{getFirstSendSteps(contacts).map(formatNumber).join(", then ")}</td>
+						</tr>
+					))}
 				</tbody>
 			</table>
 			<p>
-				Those times include the {FIRST_SEND.waitMinutes / 60}-hour check that follows the first slice of contacts you never emailed.{" "}
+				With no more than {formatNumber(firstStep.min)} new contacts, they all get it at once.{" "}
 				<Link href={getHelpHref("sending", "first-send")}>First sends in steps</Link>
 			</p>
 
-			<h2 id="dashboard">Where you see it</h2>
+			<h2 id="new-domain">A new domain and Gmail</h2>
+			<p>
+				Gmail is careful with the first emails from a domain it doesn&apos;t know, and holds back the ones that come too fast. So on a
+				new domain&apos;s first day, MailCheap sends an issue to its first {formatNumber(SENDER_WARMUP.gmailFirstDay)} Gmail readers,
+				and the others get it the next day. Readers on other inboxes get it right away.
+			</p>
+			<p>A domain is new when it&apos;s:</p>
 			<ul>
+				{sharedDomain && (
+					<li>
+						the address MailCheap gives your newsletter, like <code>your-newsletter.{sharedDomain}</code>, on its first day of
+						sending;
+					</li>
+				)}
 				<li>
-					The <LinkApp href="/">overview</LinkApp> shows your day in the warm-up and how many emails go out at once right now.
+					a domain of your own, on its first day, unless its registration shows it&apos;s more than{" "}
+					{formatCount(SENDER_WARMUP.newDomainDays, "day")} old.
 				</li>
-				<li>
-					The send step says when an issue will be spread, and over how many hours. A send at full speed only shows your day in the
-					warm-up.
-				</li>
-				<li>A campaign that is going out over hours says about how long it has left.</li>
 			</ul>
 			<p>
-				A scheduled issue follows the same pace from its send time. Paused and resumed, a send keeps its pace, and each step of a send
-				to more contacts gets its own.
+				A domain of your own that&apos;s older, like one you already send newsletters with, isn&apos;t held back: everyone gets the
+				issue right away. <LinkApp href="/domains">Add your domain</LinkApp>
 			</p>
 
-			<h2 id="after">After the warm-up</h2>
+			<h2 id="gmail">When Gmail asks to slow down</h2>
 			<p>
-				After day {WARMUP.days}, a send goes out at once up to {WARMUP.growth.last} times your proven volume. A much bigger one, like a
-				first send to a newly imported list, is still spread over hours, the same way. Each clean send raises your proven volume, so
-				growing your list gradually keeps your sends fast.
+				Sometimes Gmail still finds a domain&apos;s emails unusual. It then holds them back and asks the sender to slow down.
+				Sending on would make it worse, so MailCheap pauses the sends from that domain for {formatCount(BACKOFF.hours, "hour")} and
+				emails you. Then they go on by themselves: Gmail gets half the emails the domain sent it the day before, spread over the
+				day, and twice as many each day after, for {formatCount(BACKOFF.days, "day")}. Resuming earlier, or moving to another
+				domain, still waits for those hours.
 			</p>
 			<p>
-				Bounces and complaints matter during the warm-up and after it.{" "}
-				<Link href={getHelpHref("deliverability")}>Bounces, complaints and pauses</Link>
+				If it keeps happening, the contacts probably didn&apos;t expect your emails: check where they came from before you send
+				again. <Link href={getHelpHref("deliverability")}>Bounces, complaints and pauses</Link>
 			</p>
+
+			<h2 id="dashboard">Where you see it</h2>
+			<p>
+				Only when a send won&apos;t go out at once, the dashboard shows a box with a part for each reason: the steps with their
+				numbers, how many Gmail readers get it today and how many the next day, and why.
+			</p>
+			<ul>
+				<li>The send step shows it before you send or schedule an issue.</li>
+				<li>
+					A <LinkApp href="/campaigns">campaign</LinkApp>&apos;s page shows it while the issue goes out: the step it&apos;s on and when
+					the next one goes, and when Gmail&apos;s readers get it. A campaign Gmail paused says when it starts again.
+				</li>
+			</ul>
 		</ArticleHelp>
 	);
 }

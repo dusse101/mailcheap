@@ -3,6 +3,7 @@
 import { Suspense, lazy, useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
+import { formatShortcut } from "@/lib/keyboard";
 import { loadSearchIndex } from "@/lib/search-client";
 
 const DialogSearch = lazy(() => import("@/components/DialogSearch"));
@@ -83,8 +84,7 @@ function subscribeNever() {
 }
 
 function getShortcut() {
-	const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
-	return /mac|iphone|ipad|ipod/i.test(platform) ? "⌘K" : "Ctrl K";
+	return formatShortcut("K");
 }
 
 const SEARCH_SECTIONS = ["/help", "/docs"];

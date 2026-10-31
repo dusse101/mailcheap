@@ -11,7 +11,9 @@ import {
 	getLookback,
 	getWideRates,
 	judgeGmailRate,
+	mergeDailyRates,
 	planAccountActions,
+	readDays,
 	readIdentifier,
 	readIdentifierRates,
 	readLatestDay,
@@ -183,6 +185,7 @@ describe("Postmaster Tools' answers", () => {
 			{ metric: "spam_rate", value: { doubleValue: 0.001 }, date: null },
 		];
 		assert.deepEqual(readLatestDay(rows), { day: "2026-10-13", spamRate: 0.0004, identifiers: [`mc-${ACCOUNT_ID}`, "postshiba"] });
+		assert.deepEqual(readDays(rows).map(({ day, spamRate }) => [day, spamRate]), [["2026-10-12", 0.002], ["2026-10-13", 0.0004]], "every day, oldest first");
 		assert.deepEqual(readLatestDay([{ metric: "feedback_loop_ids", value: { stringList: { values: ["postshiba"] } }, date: { year: 2026, month: 10, day: 9 } }]), {
 			day: "2026-10-09",
 			spamRate: null,
@@ -190,6 +193,21 @@ describe("Postmaster Tools' answers", () => {
 		});
 		assert.equal(readLatestDay([]), null);
 		assert.equal(readLatestDay(undefined), null);
+	});
+
+	test("the days kept: Gmail's newer answer for a day replaces it, a day without a rate keeps what it had, the last 120 stay", () => {
+		const kept = [{ day: "2026-10-12", spamRate: 0.001 }, { day: "2026-10-13", spamRate: 0.002 }];
+		const read = [{ day: "2026-10-14", spamRate: 0 }, { day: "2026-10-12", spamRate: 0.0005 }, { day: "2026-10-13", spamRate: null }];
+		assert.deepEqual(mergeDailyRates(kept, read), [
+			{ day: "2026-10-12", spamRate: 0.0005 },
+			{ day: "2026-10-13", spamRate: 0.002 },
+			{ day: "2026-10-14", spamRate: 0 },
+		]);
+		const many = Array.from({ length: POSTMASTER.keepDays + 5 }, (_, index) => ({ day: toDay(Date.UTC(2026, 0, 1) + index * DAY_MS), spamRate: 0 }));
+		const merged = mergeDailyRates(undefined, many);
+		assert.equal(merged.length, POSTMASTER.keepDays);
+		assert.equal(merged[0].day, many[5].day, "the oldest go");
+		assert.deepEqual(mergeDailyRates(null, undefined), []);
 	});
 
 	test("each identifier's rate comes from a query of its own metric, 20 a query", () => {
@@ -564,5 +582,20 @@ describe("the daily check", () => {
 		await withEnv({ CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64") }, async () => {
 			assert.match((await check()).refused, /The stored refresh token doesn't decrypt/);
 		});
+	});
+
+	test("keeps the spam rate of every day it reads, with nothing newer to act on too, Gmail's newer answer for a day winning", async () => {
+		const [older, newer] = [daysAgo(6), daysAgo(5)];
+		google.setDay(DOMAIN, older, { spamRate: 0.0002 });
+		google.setDay(DOMAIN, newer, { spamRate: 0 });
+		const rates = async () => new Map((await connection()).days.map(({ day, spamRate }) => [day, spamRate]));
+		assert.match((await check()).skipped, /^nothing newer than /);
+		assert.deepEqual([(await rates()).get(older), (await rates()).get(newer)], [0.0002, 0]);
+
+		google.setDay(DOMAIN, older, { spamRate: 0.0004 });
+		await check();
+		assert.equal((await rates()).get(older), 0.0004);
+		const days = (await connection()).days.map(({ day }) => day);
+		assert.deepEqual(days, [...days].sort(), "oldest first");
 	});
 });

@@ -72,7 +72,8 @@ export default function DesignPage() {
 			<h2 id="emails">In emails</h2>
 			<p>
 				Apple Mail and other apps that load fonts show your theme&apos;s. Gmail, Outlook and a few others don&apos;t load fonts:
-				they show the closest system font, a sans-serif, a serif or a monospace like your theme&apos;s. Emails have no shadows.
+				they show the closest system font, a sans-serif, a serif or a monospace like your theme&apos;s. Emails have no shadows, and
+				Outlook on Windows draws buttons with square corners.
 			</p>
 			{emailBrand ? (
 				<p>

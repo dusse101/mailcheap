@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Moon, MoreHorizontal, Pencil, Trash2, UserCheck, UserPlus, UserX } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Moon, MoreHorizontal, Pencil, Tag, Trash2, UserCheck, UserPlus, UserX } from "lucide-react";
 import { deleteContact, setContactStatus } from "@/app/(app)/contacts/actions";
 import DialogContactDetails from "@/components/DialogContactDetails";
+import DialogContactTags from "@/components/DialogContactTags";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -22,7 +24,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { STATUS_LOCKS, getStatusChanges, needsConsent } from "@/lib/contact-status";
+import { getStatusChanges, getStatusLock, needsConsent } from "@/lib/contact-status";
 import { toast } from "@/lib/toast";
 
 // Deleted, they leave their status behind (lib/contacts.js).
@@ -32,12 +34,12 @@ const AFTER_DELETE = {
 	complained: "They marked an email as spam, so adding them again won't email them.",
 };
 
-// Its details, the status changes lib/contact-status.js allows for this contact, then delete. firstName, tags, fields:
-// what the details dialog edits.
-export default function MenuContact({ id, email, status, firstName = "", tags = [], fields = {} }) {
+// Its fields and tags, the status changes lib/contact-status.js allows for this contact, then delete. firstName, fields,
+// tags: what their dialogs edit. undeliverableReason: why the list hygiene stopped it, if it did.
+export default function MenuContact({ id, email, status, undeliverableReason, firstName = "", tags = [], fields = {} }) {
 	const [dialog, setDialog] = useState(null);
 	const [isPending, startTransition] = useTransition();
-	const lock = STATUS_LOCKS[status];
+	const lock = getStatusLock(status, undeliverableReason);
 
 	function change(nextStatus) {
 		if (needsConsent(status, nextStatus)) return void setDialog("consent");
@@ -60,7 +62,7 @@ export default function MenuContact({ id, email, status, firstName = "", tags = 
 						size="icon-sm"
 						aria-label={`Actions for ${email}`}
 						disabled={isPending}
-						className="text-muted-foreground hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
+						className="relative z-10 text-muted-foreground hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
 					>
 						{isPending ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
 					</Button>
@@ -68,7 +70,11 @@ export default function MenuContact({ id, email, status, firstName = "", tags = 
 				<DropdownMenuContent align="end" className="min-w-44">
 					<DropdownMenuItem onSelect={() => setDialog("details")}>
 						<Pencil />
-						Edit details
+						Edit fields
+					</DropdownMenuItem>
+					<DropdownMenuItem onSelect={() => setDialog("tags")}>
+						<Tag />
+						Edit tags
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					{lock && <DropdownMenuLabel className="max-w-56 font-normal">{lock}.</DropdownMenuLabel>}
@@ -93,17 +99,18 @@ export default function MenuContact({ id, email, status, firstName = "", tags = 
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<DialogContactDetails
-				contact={{ id, email, firstName, tags, fields }}
+				contact={{ id, email, firstName, fields }}
 				isOpen={dialog === "details"}
 				onOpenChange={changeOpen("details")}
 			/>
+			<DialogContactTags contact={{ id, email, tags }} isOpen={dialog === "tags"} onOpenChange={changeOpen("tags")} />
 			<DialogConsentContact id={id} email={email} status={status} isOpen={dialog === "consent"} onOpenChange={changeOpen("consent")} />
 			<DialogDeleteContact id={id} email={email} status={status} isOpen={dialog === "delete"} onOpenChange={changeOpen("delete")} />
 		</>
 	);
 }
 
-function getChangeItem(from, to) {
+export function getChangeItem(from, to) {
 	if (to === "unsubscribed") return { label: "Unsubscribe", icon: UserX };
 	if (to === "dormant") return { label: "Mark as dormant", icon: Moon };
 	if (from === "unsubscribed") return { label: "Resubscribe…", icon: UserPlus };
@@ -111,7 +118,7 @@ function getChangeItem(from, to) {
 }
 
 // Before resubscribing someone, or making active someone who never clicked the confirmation email.
-function DialogConsentContact({ id, email, status, isOpen, onOpenChange }) {
+export function DialogConsentContact({ id, email, status, isOpen, onOpenChange }) {
 	const [formKey, setFormKey] = useState(0);
 
 	function changeOpen(open) {
@@ -179,7 +186,9 @@ function FormConsent({ id, email, status, onDone }) {
 	);
 }
 
-function DialogDeleteContact({ id, email, status, isOpen, onOpenChange }) {
+// redirectTo: where to go once it's deleted, from the contact's own page.
+export function DialogDeleteContact({ id, email, status, isOpen, onOpenChange, onCloseAutoFocus, redirectTo }) {
+	const router = useRouter();
 	const [isDeleting, startDeleting] = useTransition();
 
 	function remove() {
@@ -188,12 +197,13 @@ function DialogDeleteContact({ id, email, status, isOpen, onOpenChange }) {
 			if (result?.error) return void toast.error(result.error);
 			onOpenChange(false);
 			toast.success("Contact deleted");
+			if (redirectTo) router.replace(redirectTo);
 		});
 	}
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-sm">
+			<DialogContent className="sm:max-w-sm" onCloseAutoFocus={onCloseAutoFocus}>
 				<DialogHeader>
 					<DialogTitle>Delete this contact?</DialogTitle>
 					<DialogDescription>

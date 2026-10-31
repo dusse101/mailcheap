@@ -59,6 +59,11 @@ describe("toasts", () => {
 		]);
 	});
 
+	test("an action's shortcut, the keys that do the same, follows its label, except on touch screens", () => {
+		toast.message("Image deleted", { action: { label: "Undo", shortcut: "⌘Z", onClick() {} } });
+		assert.match(renderToaster(), /<button[^>]*>Undo<kbd class="[^"]*\[@media\(pointer:coarse\)\]:hidden[^"]*">⌘Z<\/kbd><\/button>/);
+	});
+
 	test("a promise's toast loads, then turns into its success or its error in place", async () => {
 		const saving = Promise.resolve();
 		toast.promise(saving, { loading: "Saving", success: "Saved", error: "Not saved" });

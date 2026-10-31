@@ -130,6 +130,7 @@ describe("signups from forms on other sites", () => {
 			done: await import("../app/embed/[id]/done/route.js"),
 			botid: await import("../app/embed/botid/route.js"),
 			tokens: await import("../lib/signup-form-token.js"),
+			Account: (await import("../models/Account.js")).default,
 			Contact: (await import("../models/Contact.js")).default,
 			Message: (await import("../models/Message.js")).default,
 		};
@@ -402,6 +403,23 @@ describe("signups from forms on other sites", () => {
 
 		// The framed form, which proves a browser sent it, keeps its own, larger share.
 		assert.equal((await post(id, { email: "reader@example.org", token: token(id, "https://site.example") })).status, 200);
+	});
+
+	test("the script form's share grows with the plan; the plain form's stays the same", async (t) => {
+		t.mock.method(console, "warn", () => {});
+		const user = await customer("embed-plan@example.com");
+		const id = user.newsletterId;
+		const { perNewsletter, perNewsletterPlain } = SIGNUP_FORM_RATE_LIMITS;
+		const { isRateLimited } = await import("../lib/rate-limit.js");
+		for (let index = 0; index < perNewsletter.limit; index++) await isRateLimited({ ...perNewsletter, key: id });
+		const framed = (email) => post(id, { email, token: token(id, "https://site.example") });
+		assert.equal((await framed("past-starter@example.org")).status, 429, "Starter's share is used up");
+
+		await m.Account.updateOne({ _id: user.accountId }, { $set: { plan: "growth" } });
+		assert.equal((await framed("on-growth@example.org")).status, 200, "Growth's is twice as large");
+		for (let index = 0; index < perNewsletterPlain.limit; index++) await isRateLimited({ ...perNewsletterPlain, key: id });
+		const plain = await post(id, { email: "plain@example.org" }, { headers: { origin: "https://site.example" } });
+		assert.equal(plain.status, 429);
 	});
 
 	test("visitors and addresses get a few signups at a time, whichever newsletters ask", async () => {

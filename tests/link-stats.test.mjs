@@ -37,6 +37,20 @@ test("the report links only web addresses: anything else stays text", async () =
 	assert.ok(html.includes("javascript:alert(1)"), "it still shows, as text");
 });
 
+test("each web link in the report shows its website's favicon, anything else a globe", async () => {
+	const { default: TableCampaignLinks } = await import("../components/TableCampaignLinks.jsx");
+	const link = (url) => ({ key: getLinkKey(url), url, clickers: 1, clicks: 1 });
+	const html = renderToStaticMarkup(
+		createElement(TableCampaignLinks, {
+			stats: { links: [link("https://news.example.com/post"), link("javascript:alert(1)")], clickers: 2, isComplete: true },
+			html: "",
+		})
+	);
+	assert.ok(html.includes("s2/favicons?domain=news.example.com&amp;"), "the favicon of the link's own host");
+	assert.equal(html.match(/s2\/favicons/g).length, 1, "only a web link asks for one");
+	assert.equal(html.match(/<svg/g)?.length, 1, "the other gets a globe");
+});
+
 test("MailCheap's own unsubscribe, keep and confirm pages aren't the issue's links", () => {
 	const host = "localhost:3000";
 	assert.equal(isSystemLink("http://localhost:3000/api/unsubscribe?token=abc", host), true);

@@ -6,6 +6,7 @@ import { useEditorState } from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
 import { AlignCenter, AlignLeft, AlignRight, CornerDownLeft, Trash2 } from "lucide-react";
 import { ButtonFormat } from "@/components/MenuFormat";
+import { deleteBlock } from "@/lib/editor-undo-delete";
 
 // A toolbar for the picture under the pointer, or the selected one on touch screens and from the keyboard: where it
 // sits in the column (lib/editor-image.js), its alt text and a way to remove it. It sits inside the picture's top edge,
@@ -86,7 +87,7 @@ export default function MenuImage({ editor }) {
 	}
 
 	function remove() {
-		editor.chain().focus().setNodeSelection(target.pos).deleteSelection().run();
+		deleteBlock(editor, target.pos);
 		setHovered(null);
 	}
 
@@ -184,7 +185,8 @@ function isInside(element, node) {
 }
 
 const INSET = 8;
-const ALIGNMENTS = [
+// Also a button's (components/MenuButton.jsx).
+export const ALIGNMENTS = [
 	{ value: "left", label: "Align left", icon: AlignLeft },
 	{ value: "center", label: "Center", icon: AlignCenter },
 	{ value: "right", label: "Align right", icon: AlignRight },

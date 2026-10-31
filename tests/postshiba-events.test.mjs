@@ -60,6 +60,8 @@ test("PostShiba's events take the one event shape, with the account and message 
 	assert.equal(delivered.accountId, ACCOUNT_ID);
 	assert.equal(delivered.messageId, MESSAGE_ID);
 	assert.equal(delivered.providerMessageId, "abc@postshiba.test");
+	const late = normalizePostshibaEvent(postshibaEvent("bounce", { sg_message_id: "C1BEAFF0-CE5C-11F1-8357-D2AEA50A6CD7" }));
+	assert.equal(late.providerMessageId, "c1beaff0ce5c11f18357d2aea50a6cd7", "a late event's hyphenated id is the id other events give");
 	assert.match(delivered.providerEventId, /^capsule-/);
 	assert.equal(delivered.tenant, `mc-${ACCOUNT_ID}`);
 	assert.equal(delivered.email, "reader@example.org");
@@ -78,6 +80,8 @@ test("PostShiba's events take the one event shape, with the account and message 
 	const blocked = getEventPlan(normalizePostshibaEvent(postshibaEvent("bounce", { type: "blocked", reason: "550 5.7.1 reputation" })));
 	assert.deepEqual([blocked.suppression, blocked.error], [null, "Soft bounce: 550 5.7.1 reputation"]);
 	assert.equal(getEventPlan(normalizePostshibaEvent(postshibaEvent("bounce", { type: "bounce", reason: "expired" }))).suppression, null, "expired isn't the address");
+	const flushed = getEventPlan(normalizePostshibaEvent(postshibaEvent("bounce", { type: "bounce", reason: "flushed by sender" })));
+	assert.deepEqual([flushed.suppression, flushed.status, flushed.error], [null, null, "Soft bounce: flushed by sender"], "a flushed queue isn't the address");
 	assert.equal(getEventPlan(normalizePostshibaEvent(postshibaEvent("bounce", {}))).suppression, null, "no type: PostShiba suppresses it if it was hard");
 
 	const complaint = getEventPlan(normalizePostshibaEvent(postshibaEvent("spamreport", { attribution: "verified" })));
@@ -245,6 +249,34 @@ describe("the PostShiba webhook", () => {
 
 		assert.equal((await post([eventFor({ tenantSlug: "mc-000000000000000000000000" }, null, "bounce", { email: "x@example.org", type: "bounce" })])).status, 200);
 		assert.equal((await post([{ event: "delivered", email: "test@example.com", timestamp: 1, test: true }])).status, 200, "PostShiba's test event");
+	});
+
+	test("a late bounce or spam report, without unique args and with its id hyphenated, still lands on its email", async () => {
+		const bounceId = "c1beaff0-ce5c-11f1-8357-d2aea50a6cd7";
+		const { message, contact, campaignId } = await sentMessage(alice, "late-bounce@example.org");
+		assert.equal((await post([eventFor(alice, message, "delivered", { sg_message_id: bounceId.replace(/-/g, "") })])).status, 200);
+		const lateBounce = eventFor(alice, null, "bounce", {
+			email: "late-bounce@example.org",
+			type: "bounce",
+			status: "5.1.1",
+			reason: "550 5.1.1 user unknown",
+			bounce_classification: "Invalid Address",
+			sg_message_id: bounceId,
+		});
+		assert.equal((await post([lateBounce])).status, 200);
+		const bounced = await m.Message.findOne({ accountId: alice.accountId, _id: message._id }).lean();
+		assert.equal(bounced.status, "bounced");
+		assert.ok(bounced.bouncedAt);
+		assert.equal((await m.Campaign.findOne({ accountId: alice.accountId, _id: campaignId }).lean()).stats.bounced, 1);
+		assert.equal((await m.Contact.findOne({ accountId: alice.accountId, _id: contact._id }).lean()).status, "bounced");
+
+		const complaintId = "d072fe85-cdf3-11f1-8111-d688540e9bd3";
+		const { message: read, campaignId: readCampaignId } = await sentMessage(alice, "late-complaint@example.org");
+		assert.equal((await post([eventFor(alice, read, "delivered", { sg_message_id: complaintId.replace(/-/g, "") })])).status, 200);
+		const lateComplaint = eventFor(alice, null, "spamreport", { email: "late-complaint@example.org", sg_message_id: complaintId.toUpperCase() });
+		assert.equal((await post([lateComplaint])).status, 200);
+		assert.equal((await m.Message.findOne({ accountId: alice.accountId, _id: read._id }).lean()).status, "complained");
+		assert.equal((await m.Campaign.findOne({ accountId: alice.accountId, _id: readCampaignId }).lean()).stats.complained, 1);
 	});
 
 	test("PostShiba's own unsubscribe link unsubscribes the address across the account, and a drop of a suppressed address suppresses it", async () => {

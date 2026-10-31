@@ -2,22 +2,54 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatNumber } from "@/lib/format";
+import { ChevronDown, X } from "lucide-react";
+import { DotStatus, statusLabel } from "@/components/BadgeStatus";
+import InputDate from "@/components/InputDate";
+import InputSearch from "@/components/InputSearch";
+import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+	FILTER_PARAMS,
+	SIGNUP_MODES,
+	describeSignupDays,
+	fromSignupDays,
+	getSourceLabel,
+	readDayKey,
+	toSignupDays,
+} from "@/lib/contact-filters";
+import { formatCount, formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
-const ALL_TAGS = "__all";
+const ALL = "__all";
+const NO_FILTERS = Object.fromEntries(FILTER_PARAMS.map((key) => [key, null]));
 
-// The search by address and, once contacts have tags, a filter by tag. tags: [{ name, contacts }], most used first.
-export default function FilterContacts({ tags = [] }) {
+// The search by address and the filters, kept in the page's address: a status, a tag, the signup date and where
+// contacts came from. statuses: [{ value, count }] for the same search and filters, total: all of them. tags and
+// sources: [{ name, contacts }], most first. count: the contacts the list shows.
+export default function FilterContacts({ statuses = [], total = 0, tags = [], sources = [], count }) {
 	const router = useRouter();
 	const pathname = usePathname();
 	const searchParams = useSearchParams();
 	const [query, setQuery] = useState(searchParams.get("q") ?? "");
 	const [isPending, startTransition] = useTransition();
 	const timeout = useRef(null);
+	const status = searchParams.get("status") ?? "";
 	const tag = searchParams.get("tag") ?? "";
+	const source = searchParams.get("source") ?? "";
+	const signupDays = {
+		signedUpSince: readDayKey(searchParams.get("signedUpSince")),
+		signedUpBefore: readDayKey(searchParams.get("signedUpBefore")),
+	};
+	const signupLabel = describeSignupDays(signupDays);
+	const hasFilters = Boolean(status || tag || source || signupLabel);
 
 	function navigate(changes) {
 		const params = new URLSearchParams(searchParams);
@@ -26,56 +58,228 @@ export default function FilterContacts({ tags = [] }) {
 			else params.delete(key);
 		}
 		params.delete("page");
-		startTransition(() => router.replace(`${pathname}?${params}`, { scroll: false }));
+		startTransition(() => router.replace(params.size ? `${pathname}?${params}` : pathname, { scroll: false }));
 	}
 
-	function onQueryChange(event) {
-		const value = event.target.value;
+	function onQueryChange(value) {
 		setQuery(value);
 		clearTimeout(timeout.current);
-		timeout.current = setTimeout(() => navigate({ q: value.trim() }), 300);
+		const q = value.trim();
+		if (q) timeout.current = setTimeout(() => navigate({ q }), 300);
+		else navigate({ q });
 	}
 
 	useEffect(() => () => clearTimeout(timeout.current), []);
 
 	return (
-		<div className="flex min-w-0 flex-1 gap-2">
-			<div className="relative min-w-0 flex-1">
-				{isPending ? (
-					<Loader2 className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-				) : (
-					<Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+		<div className="flex flex-col gap-2 md:flex-row md:items-start">
+			<InputSearch
+				value={query}
+				onChange={onQueryChange}
+				isPending={isPending}
+				placeholder="Search by email or domain"
+				aria-label="Search by email or domain"
+				className="md:w-56 md:shrink-0"
+			/>
+			<div className="-m-1 flex min-w-0 flex-1 items-center gap-1.5 p-1 max-md:overflow-x-auto max-md:[scrollbar-width:none] md:flex-wrap">
+				<ChipFilter label="Status" value={status && statusLabel(status)} onClear={() => navigate({ status: null })}>
+					{(trigger) => (
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+							<DropdownMenuContent align="start" className="w-56">
+								<DropdownMenuRadioGroup value={status || ALL} onValueChange={(value) => navigate({ status: value === ALL ? null : value })}>
+									<ItemCount value={ALL} count={total}>
+										All statuses
+									</ItemCount>
+									<DropdownMenuSeparator />
+									{statuses.map((item) => (
+										<ItemCount key={item.value} value={item.value} count={item.count}>
+											<DotStatus status={item.value} className="mx-1" />
+											{statusLabel(item.value)}
+										</ItemCount>
+									))}
+								</DropdownMenuRadioGroup>
+							</DropdownMenuContent>
+						</DropdownMenu>
+					)}
+				</ChipFilter>
+
+				{(tags.length > 0 || tag) && (
+					<ChipFilter label="Tag" value={tag} onClear={() => navigate({ tag: null })}>
+						{(trigger) => (
+							<MenuOptions trigger={trigger} value={tag} allLabel="All tags" options={tags} onChange={(value) => navigate({ tag: value })} />
+						)}
+					</ChipFilter>
 				)}
-				<Input
-					type="search"
-					value={query}
-					onChange={onQueryChange}
-					placeholder="Search by email"
-					aria-label="Search by email"
-					className="h-9 pl-8"
-				/>
+
+				<ChipFilter label="Signed up" value={signupLabel} onClear={() => navigate({ signedUpSince: null, signedUpBefore: null })}>
+					{(trigger) => <PopoverSignup trigger={trigger} days={signupDays} onChange={navigate} />}
+				</ChipFilter>
+
+				{(sources.length > 0 || source) && (
+					<ChipFilter label="Source" value={source && getSourceLabel(source)} onClear={() => navigate({ source: null })}>
+						{(trigger) => (
+							<MenuOptions
+								trigger={trigger}
+								value={source}
+								allLabel="All sources"
+								options={sources}
+								getLabel={getSourceLabel}
+								onChange={(value) => navigate({ source: value })}
+							/>
+						)}
+					</ChipFilter>
+				)}
+
+				{hasFilters && (
+					<Button variant="ghost" size="sm" onClick={() => navigate(NO_FILTERS)} className="shrink-0 rounded-full text-muted-foreground">
+						Clear
+					</Button>
+				)}
+
+				{count !== undefined && (
+					<span className="ml-auto shrink-0 pl-2 text-sm whitespace-nowrap text-muted-foreground tabular-nums max-md:hidden">
+						{formatCount(count, "contact")}
+					</span>
+				)}
 			</div>
-			{(tags.length > 0 || tag) && (
-				<Select value={tag || ALL_TAGS} onValueChange={(value) => navigate({ tag: value === ALL_TAGS ? "" : value })}>
-					<SelectTrigger className="h-9 w-36 shrink-0 sm:w-44" aria-label="Tag">
-						{/* The name alone: the items also show their counts. */}
-						<SelectValue>{tag ? <span className="truncate">{tag}</span> : <span className="text-muted-foreground">All tags</span>}</SelectValue>
-					</SelectTrigger>
-					<SelectContent align="end">
-						<SelectItem value={ALL_TAGS}>All tags</SelectItem>
-						<SelectSeparator />
-						{tag && !tags.some(({ name }) => name === tag) && <SelectItem value={tag}>{tag}</SelectItem>}
-						{tags.map(({ name, contacts }) => (
-							<SelectItem key={name} value={name}>
-								<span className="flex w-full items-center justify-between gap-3">
-									<span className="truncate">{name}</span>
-									<span className="text-xs text-muted-foreground tabular-nums">{formatNumber(contacts)}</span>
-								</span>
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+		</div>
+	);
+}
+
+// A filter as a pill: its name until it's set, then its value too, with a cross that clears it. children: its menu,
+// from the trigger it gets.
+function ChipFilter({ label, value, onClear, children }) {
+	const trigger = (
+		<button
+			type="button"
+			className={cn(
+				"flex h-full min-w-0 items-center gap-1.5 rounded-full text-sm whitespace-nowrap outline-none transition-colors duration-150 focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:text-foreground",
+				value ? "pr-1 pl-3" : "px-3 text-muted-foreground hover:text-foreground"
+			)}
+		>
+			{label}
+			{value ? (
+				<span className="max-w-48 truncate font-medium text-foreground">{value}</span>
+			) : (
+				<ChevronDown aria-hidden="true" className="size-3.5 opacity-60" />
+			)}
+		</button>
+	);
+
+	return (
+		<div
+			className={cn(
+				"inline-flex h-8 shrink-0 items-center rounded-full shadow-border transition-colors duration-150",
+				value ? "bg-muted/60" : "hover:bg-muted/60"
+			)}
+		>
+			{children(trigger)}
+			{value && (
+				<button
+					type="button"
+					aria-label={`Clear ${label.toLowerCase()}`}
+					onClick={onClear}
+					className="mr-1 grid size-6 place-items-center rounded-full text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+				>
+					<X className="size-3.5" />
+				</button>
 			)}
 		</div>
+	);
+}
+
+function ItemCount({ value, count, children }) {
+	return (
+		<DropdownMenuRadioItem value={value}>
+			<span className="flex min-w-0 flex-1 items-center gap-1.5">{children}</span>
+			<span className="text-xs text-muted-foreground tabular-nums">{formatNumber(count)}</span>
+		</DropdownMenuRadioItem>
+	);
+}
+
+// One of a list of names with their counts, like tags or sources. The value picked stays listed when no contact has it.
+function MenuOptions({ trigger, value, allLabel, options, getLabel = (name) => name, onChange }) {
+	const items = value && !options.some(({ name }) => name === value) ? [{ name: value, contacts: 0 }, ...options] : options;
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+			<DropdownMenuContent align="start" className="max-h-80 w-60">
+				<DropdownMenuRadioGroup value={value || ALL} onValueChange={(next) => onChange(next === ALL ? null : next)}>
+					<DropdownMenuRadioItem value={ALL}>{allLabel}</DropdownMenuRadioItem>
+					<DropdownMenuSeparator />
+					{items.map(({ name, contacts }) => (
+						<ItemCount key={name} value={name} count={contacts}>
+							<span className="truncate">{getLabel(name)}</span>
+						</ItemCount>
+					))}
+				</DropdownMenuRadioGroup>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+// Before a day, after one, or between two, both included.
+function PopoverSignup({ trigger, days, onChange }) {
+	const [isOpen, setIsOpen] = useState(false);
+
+	return (
+		<Popover open={isOpen} onOpenChange={setIsOpen}>
+			<PopoverTrigger asChild>{trigger}</PopoverTrigger>
+			<PopoverContent align="start" aria-label="Signup date" className="flex w-76 max-w-[calc(100vw-1rem)] flex-col gap-3 p-3">
+				{isOpen && (
+					<FormSignup
+						picked={fromSignupDays(days)}
+						onApply={(picked) => {
+							onChange(toSignupDays(picked));
+							setIsOpen(false);
+						}}
+					/>
+				)}
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+function FormSignup({ picked, onApply }) {
+	const [mode, setMode] = useState(picked?.mode ?? "after");
+	const [day, setDay] = useState(picked?.day ?? "");
+	const [endDay, setEndDay] = useState(picked?.endDay ?? "");
+	const isBetween = mode === "between";
+	const canApply = Boolean(day) && (!isBetween || (endDay && endDay >= day));
+
+	function apply(event) {
+		event.preventDefault();
+		if (canApply) onApply({ mode, day, endDay: isBetween ? endDay : null });
+	}
+
+	return (
+		<form onSubmit={apply} className="flex flex-col gap-3">
+			<span className="text-sm font-medium">Signed up</span>
+			<div role="radiogroup" aria-label="When" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-0.5">
+				{SIGNUP_MODES.map(({ value, label }) => (
+					<button
+						key={value}
+						type="button"
+						role="radio"
+						aria-checked={mode === value}
+						onClick={() => setMode(value)}
+						className={cn(
+							"h-7 rounded-md px-2.5 text-sm outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-3 focus-visible:ring-ring/50",
+							mode === value ? "bg-background font-medium text-foreground shadow-border" : "text-muted-foreground hover:text-foreground"
+						)}
+					>
+						{label}
+					</button>
+				))}
+			</div>
+			<div className="flex flex-col gap-2">
+				<InputDate value={day} onChange={setDay} max={isBetween ? endDay || undefined : undefined} aria-label={isBetween ? "From" : "Day"} />
+				{isBetween && <InputDate value={endDay} onChange={setEndDay} min={day || undefined} placeholder="And" aria-label="To" />}
+			</div>
+			<Button type="submit" size="sm" disabled={!canApply}>
+				Apply
+			</Button>
+		</form>
 	);
 }

@@ -10,16 +10,16 @@ const NO_STORE = { "Cache-Control": "no-store" };
 // Gmail and Yahoo send one-click requests from shared mail servers, so keep this generous.
 const RATE_LIMIT = { name: "summary-unsubscribe", limit: 60, window: "1 m" };
 
-// The summary email's List-Unsubscribe link (RFC 8058): a mail app's Unsubscribe button posts here, and the summary
-// turns off without a page.
+// The summary email's List-Unsubscribe link (RFC 8058): a mail app's Unsubscribe button posts here, and that
+// newsletter's summary turns off without a page.
 export async function POST(request) {
 	const reference = verifySummarySettingsToken(new URL(request.url).searchParams.get("token"));
 	if (!reference) return new NextResponse("This link doesn't work.", { status: 400, headers: NO_STORE });
 	if (await isRateLimited({ ...RATE_LIMIT, key: getClientIp(request.headers) })) {
 		return new NextResponse("Too many requests.", { status: 429, headers: NO_STORE });
 	}
-	await saveSummaryFrequency(reference.accountId, "off");
-	console.info(`[summary] Turned off by one-click unsubscribe for account ${reference.accountId}`);
+	await saveSummaryFrequency({ ...reference, frequency: "off" });
+	console.info(`[summary] Turned off by one-click unsubscribe for newsletter ${reference.newsletterId} of account ${reference.accountId}`);
 	return new NextResponse("Summary emails are off.", { status: 200, headers: NO_STORE });
 }
 

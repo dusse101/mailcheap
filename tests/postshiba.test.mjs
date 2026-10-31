@@ -180,7 +180,8 @@ test("inject errors only retry what certainly wasn't sent", () => {
 	assert.equal(getInjectError(postshibaError(null, {}, { isTimeout: true })).outcome, SEND_OUTCOMES.failed);
 	assert.match(getInjectError(postshibaError(null, {}, { isTimeout: true })).message, /may have gone out/);
 	assert.equal(getInjectError(postshibaError(null, {}, { message: "fetch failed" })).outcome, SEND_OUTCOMES.unavailable);
-	assert.equal(getInjectError(postshibaError(401)).outcome, SEND_OUTCOMES.misconfigured);
+	const refused = getInjectError(postshibaError(401, { error: "authentication failed" }));
+	assert.deepEqual([refused.outcome, refused.retryAfter], [SEND_OUTCOMES.credentialRefused, 600], "the account's own login, tried again later");
 	const hourly = getInjectError(postshibaError(429, {}, { detail: "429 hourly send limit reached" }));
 	assert.equal(hourly.outcome, SEND_OUTCOMES.throttled);
 	assert.ok(hourly.retryAfter > 60);

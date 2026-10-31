@@ -1,27 +1,28 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Check, ChevronRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronRight } from "lucide-react";
 import ButtonNewCampaign from "@/components/ButtonNewCampaign";
+import CircleStep from "@/components/CircleStep";
 import IconBrand, { AGENTS } from "@/components/IconBrand";
-import IconWarmup from "@/components/IconWarmup";
-import LinkHelp from "@/components/LinkHelp";
 import ShellGetStarted from "@/components/ShellGetStarted";
 import { Button } from "@/components/ui/button";
-import { WARMUP, isCloud } from "@/lib/config";
-import { getGetStartedSteps } from "@/lib/get-started";
+import { getGetStartedSteps, isGetStartedOpen } from "@/lib/get-started";
+import { ADD_DOMAIN_PATH } from "@/lib/newsletters";
 import { getSelectedNewsletter } from "@/lib/selected-newsletter";
 import { cn } from "@/lib/utils";
 
-// The steps to a first send (lib/get-started.js), on every dashboard page. The first one left that isn't
-// optional says how to do it; the others link to where they're done.
+// The open newsletter's steps to a first send (lib/get-started.js), on every dashboard page. The first one left that
+// isn't optional says how to do it; the others link to where they're done. Keyed by newsletter: switching from one
+// whose panel was just closed or finished still opens the next one's.
 export default async function PanelGetStarted({ account }) {
 	const { selected } = await getSelectedNewsletter();
-	const { steps, draftId, isFinished } = await getGetStartedSteps(account, selected?._id);
-	const newsletterId = selected ? String(selected._id) : null;
+	if (!isGetStartedOpen(account, selected)) return null;
+	const newsletterId = String(selected._id);
+	const { steps, draftId, isFinished } = await getGetStartedSteps(account, selected._id);
 	const doneCount = steps.filter(({ isDone }) => isDone).length;
 	const nextId = steps.find(({ isDone, isOptional }) => !isDone && !isOptional)?.id;
 
 	return (
-		<ShellGetStarted done={doneCount} total={steps.length} isFinished={isFinished}>
+		<ShellGetStarted key={newsletterId} newsletterId={newsletterId} done={doneCount} total={steps.length} isFinished={isFinished}>
 			<header className="px-3 pt-2.5 pb-3">
 				<h2 id="get-started-title" className="pr-16 font-semibold tracking-tight">
 					Get started
@@ -72,15 +73,6 @@ function ItemStep({ step, number, isNext, link, newsletterId }) {
 							{step.id === "agent" && <IconsAgents />}
 						</p>
 						<p className="text-sm text-muted-foreground">{description}</p>
-						{step.id === "send" && isCloud() && (
-							<p className="mt-1.5 flex gap-1.5 text-sm text-pretty text-muted-foreground">
-								<IconWarmup className="mt-0.5" />
-								<span>
-									It starts your account&apos;s {WARMUP.days}-day warm-up: up to {WARMUP.quickEmails} emails go out at once, bigger sends
-									over hours. <LinkHelp article="warm-up" />
-								</span>
-							</p>
-						)}
 					</div>
 					{step.id === "write" ? (
 						<ButtonNewCampaign newsletterId={newsletterId} label="New draft" size="sm" />
@@ -116,22 +108,6 @@ function ItemStep({ step, number, isNext, link, newsletterId }) {
 				<Arrow className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
 			</Link>
 		</li>
-	);
-}
-
-function CircleStep({ number, isDone, isNext }) {
-	return (
-		<span
-			aria-hidden="true"
-			className={cn(
-				"grid size-6 shrink-0 place-items-center rounded-full font-mono text-[11px] tabular-nums",
-				isDone && "bg-foreground text-background",
-				isNext && "bg-card text-foreground inset-ring-[1.5px] inset-ring-foreground",
-				!isDone && !isNext && "text-muted-foreground inset-ring inset-ring-foreground/15"
-			)}
-		>
-			{isDone ? <Check className="size-3.5" strokeWidth={2.5} /> : number}
-		</span>
 	);
 }
 
@@ -214,7 +190,7 @@ const STEPS = {
 	domain: {
 		title: "Send from your domain",
 		description: "Add its DNS records, then send from your address.",
-		href: "/domains",
+		href: ADD_DOMAIN_PATH,
 		action: "Add a domain",
 	},
 	send: {

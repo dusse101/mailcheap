@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isLimitedInMemory, isRateLimited } from "../lib/rate-limit.js";
+import { getLimiter, isLimitedInMemory, isRateLimited } from "../lib/rate-limit.js";
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -37,6 +37,30 @@ test("Redis answers decide while it's up", async () => {
 	const refusing = { limit: async () => ({ success: false }) };
 	assert.equal(await countAllowed({ ...LOGIN, key: "198.51.100.5" }, 5, allowing), 5);
 	assert.equal(await countAllowed({ ...LOGIN, key: "198.51.100.5" }, 2, refusing), 0);
+});
+
+test("a name can take several limits, as a plan's signup limits do: one count, which each compares with its own", async () => {
+	const starter = { name: "test-plan", limit: 2, window: "1 h", key: "account-a" };
+	const growth = { ...starter, limit: 4 };
+	const results = [];
+	for (const limits of [starter, starter, starter, growth, growth, growth]) results.push(await isRateLimited(limits));
+	assert.deepEqual(results, [false, false, true, false, false, true], "an upgrade raises the limit on what was already counted");
+});
+
+test("with Redis, each limit has its own limiter, all keeping their name's count", () => {
+	process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+	process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+	try {
+		const starter = getLimiter({ name: "test-scaled", limit: 600, window: "1 h" });
+		const growth = getLimiter({ name: "test-scaled", limit: 1200, window: "1 h" });
+		assert.notEqual(growth, starter, "a bigger plan's limit, never the first one asked for");
+		assert.equal(getLimiter({ name: "test-scaled", limit: 600, window: "1 h" }), starter);
+		assert.equal(starter.prefix, "mailcheap/test-scaled");
+		assert.equal(growth.prefix, starter.prefix);
+	} finally {
+		delete process.env.UPSTASH_REDIS_REST_URL;
+		delete process.env.UPSTASH_REDIS_REST_TOKEN;
+	}
 });
 
 test("memory limits open again once the window has passed", () => {

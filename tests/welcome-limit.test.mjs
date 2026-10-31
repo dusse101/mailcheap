@@ -155,6 +155,43 @@ describe("when welcome emails pause", () => {
 	});
 });
 
+describe("signup limits by plan", () => {
+	test("past a newsletter's signup emails in 10 minutes, 100 on Starter, new subscribers get none, and a bigger plan sends more", async () => {
+		const user = await addNewsletter(await customer("welcome-cap@example.com"));
+		const sentEarlier = (count, from) =>
+			m.Message.insertMany(
+				Array.from({ length: count }, (_, index) => ({
+					kind: "welcome",
+					accountId: user.accountId,
+					newsletterId: user.newsletterId,
+					email: `earlier-${from + index}@example.org`,
+					status: "delivered",
+				}))
+			);
+		await sentEarlier(100, 0);
+		const emailsBefore = platformEmails.length;
+		assert.equal(await signUp("REST API", user, "past-starter@example.org"), null, "Starter's 100 went out");
+		const alert = platformEmails.slice(emailsBefore).find(({ subject }) => subject === "[MailCheap] Signup emails capped");
+		assert.ok(alert.text.includes("Over 100 welcome and confirmation emails for welcome-cap news in 10 minutes. New signups get none until it slows down. Bigger plans send more."));
+
+		await m.Account.updateOne({ _id: user.accountId }, { $set: { plan: "growth" } });
+		assert.ok(await signUp("REST API", user, "on-growth@example.org"), "Growth sends 200");
+		await sentEarlier(99, 100);
+		assert.equal(await signUp("REST API", user, "past-growth@example.org"), null);
+	});
+
+	test("so does an hour's signups from the API, AI assistants and the dashboard: 600 on Starter", async () => {
+		const user = await addNewsletter(await customer("signups-hour@example.com"));
+		const { isRateLimited } = await import("../lib/rate-limit.js");
+		const perAccount = { name: "account-signups", limit: 600, window: "1 h", key: String(user.accountId) };
+		for (let index = 0; index < perAccount.limit; index++) await isRateLimited(perAccount);
+		const add = (email) => as(user, () => m.contacts.addContact(null, form({ newsletterId: user.newsletterId, email, consent: "on" })));
+		assert.deepEqual(await add("past-starter@example.org"), { error: "You can add 600 contacts an hour. Try again later." });
+		await m.Account.updateOne({ _id: user.accountId }, { $set: { plan: "pro" } });
+		assert.deepEqual(await add("on-pro@example.org"), { email: "on-pro@example.org", status: "active" }, "Pro takes 3,000");
+	});
+});
+
 describe("every way in", () => {
 	test("sends the welcome email while the month has room, then skips it: recorded, counted once, never past the limit", async () => {
 		const paths = Object.keys(SIGNUPS);

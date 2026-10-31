@@ -94,6 +94,9 @@ export function PreviewThemeSite({ theme, newsletter }) {
 					<div data-callout="">
 						<p>Reply to this email: I read every answer.</p>
 					</div>
+					<div data-button="">
+						<a href="#preview">Read the full issue</a>
+					</div>
 				</div>
 			</div>
 		</ScopeTheme>

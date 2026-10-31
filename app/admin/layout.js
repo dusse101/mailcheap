@@ -6,6 +6,8 @@ import LogoWordmark from "@/components/LogoWordmark";
 import { Button } from "@/components/ui/button";
 import { SiteAnalytics } from "@/components/SiteExtensions";
 import { requireAdmin } from "@/lib/auth";
+import { isCloud } from "@/lib/config";
+import { siteExtensions } from "@/lib/site-extensions";
 
 export const metadata = { title: "Admin" };
 
@@ -22,6 +24,12 @@ export default async function AdminLayout({ children }) {
 					</LogoWordmark>
 					<div className="flex min-w-0 items-center gap-1">
 						<span className="mr-2 hidden truncate text-xs text-muted-foreground sm:block">{admin.email}</span>
+						{isCloud() &&
+							siteExtensions.adminLinks.map(({ href, label }) => (
+								<Button key={href} asChild variant="ghost" size="sm">
+									<Link href={href}>{label}</Link>
+								</Button>
+							))}
 						<Button asChild variant="ghost" size="sm">
 							<Link href="/">Dashboard</Link>
 						</Button>

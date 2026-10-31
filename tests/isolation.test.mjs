@@ -146,6 +146,7 @@ describe("server actions refuse another account's data", () => {
 			await as(alice, () => m.contacts.addContact(null, form({ newsletterId: bobData.newsletterId, email: "spam@example.net", consent: "on" }))),
 			{ error: "Newsletter not found" }
 		);
+		assert.deepEqual(await as(alice, () => m.campaigns.findPreviewContacts(bobData.newsletterId, "reader")), { error: "Newsletter not found" });
 		assert.deepEqual(await snapshot(), before);
 		assert.equal(await m.Contact.countDocuments({ accountId: bob.accountId, email: "spam@example.net" }), 0);
 		assert.equal(await m.Contact.exists({ newsletterId: bobData.newsletterId, email: "spam@example.net" }).setOptions({ crossAccount: true }), null);
@@ -272,6 +273,22 @@ describe("API routes stay inside the key's account", () => {
 		});
 		assert.equal(draft.status, 404);
 		assert.equal(await m.Campaign.countDocuments({ accountId: bob.accountId }), 1);
+
+		const preview = await callApi("GET", `/api/v1/campaigns/${bobData.campaignId}/preview?contact=reader1@example.org`, { key: alice.apiKey });
+		assert.deepEqual([preview.status, preview.body.error.message], [404, "Campaign not found"]);
+	});
+
+	test("searching contacts and previewing as one", async () => {
+		const named = await callApi("GET", "/api/v1/contacts/search?newsletter=bob-weekly&query=reader", { key: alice.apiKey });
+		assert.deepEqual([named.status, named.body.error.message], [404, "Newsletter not found"]);
+		const everywhere = await callApi("GET", "/api/v1/contacts/search?query=reader", { key: alice.apiKey });
+		assert.deepEqual(everywhere.body.contacts, [], "without a newsletter, only the key's account");
+
+		const own = await callApi("POST", "/api/v1/campaigns", { key: alice.apiKey, body: { subject: "Hi {{first_name|there}}" } });
+		const asBobsReader = await callApi("GET", `/api/v1/campaigns/${own.body.id}/preview?contact=${bobData.readerId}`, { key: alice.apiKey });
+		assert.deepEqual([asBobsReader.status, asBobsReader.body.error.message], [404, "Contact not found"]);
+		const byAddress = await callApi("GET", `/api/v1/campaigns/${own.body.id}/preview?contact=reader1@example.org`, { key: alice.apiKey });
+		assert.equal(byAddress.status, 404);
 	});
 
 	test("an unknown or revoked key gets 401", async () => {

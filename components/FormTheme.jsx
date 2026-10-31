@@ -280,5 +280,5 @@ An [essay on doing fewer things](https://example.com) that I keep coming back to
 Reply to this email: I read every answer.
 :::
 
-<a href="#" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;">Read the full issue</a>
+<div data-button=""><a href="https://example.com">Read the full issue</a></div>
 `;
