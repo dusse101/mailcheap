@@ -13,6 +13,8 @@ const contactSchema = new mongoose.Schema(
 		source: { type: String, trim: true },
 		// Signed up with the form on the owner's site (source "embed"): that site's host, as the browser named it.
 		sourceDomain: { type: String, trim: true },
+		// Fork: the page of the newsletter's own site whose form they used, like /frisco (lib/signup-funnel.js).
+		signupPath: { type: String, trim: true },
 		// Where the person was, as a two-letter code (lib/countries.js): from the signup that added them, their confirmation, or
 		// else their first click in an email.
 		country: { type: String },
@@ -30,6 +32,8 @@ const contactSchema = new mongoose.Schema(
 		},
 		subscribedAt: { type: Date, default: Date.now },
 		confirmedAt: { type: Date },
+		// Fork: when the confirm page first showed this pending contact its button. Signing up again starts it over.
+		confirmOpenedAt: { type: Date },
 		unsubscribedAt: { type: Date },
 		lastSentAt: { type: Date },
 		lastOpenAt: { type: Date },

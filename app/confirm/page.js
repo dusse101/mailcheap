@@ -10,6 +10,7 @@ import { verifyConfirmToken } from "@/lib/confirmation";
 import { connectDb } from "@/lib/db";
 import { brandTitle, getPublicBrand } from "@/lib/public-brand";
 import { findOpenNewsletter } from "@/lib/public-newsletters";
+import { markConfirmOpened } from "@/lib/signup-funnel";
 import Contact from "@/models/Contact";
 
 // The URL carries the confirmation token: keep it out of search results and referrer headers.
@@ -33,6 +34,7 @@ export default async function ConfirmPage({ searchParams }) {
 	const lookup = newsletter ? await getContact(newsletter, reference.contactId) : null;
 	const outcome = confirmOutcome(newsletter, lookup);
 	const brand = getPublicBrand();
+	if (lookup?.contact?.status === "pending") await noteOpened(newsletter, reference.contactId);
 
 	if (brand) {
 		if (outcome === "form" || outcome === "done") {
@@ -100,5 +102,14 @@ async function getContact(newsletter, contactId) {
 	} catch (error) {
 		console.error("[confirm] Could not load the contact:", error.message);
 		return { failed: true };
+	}
+}
+
+// Fork: the signup funnel's "opened" step. Showing the button changes nothing else, and a failure still shows it.
+async function noteOpened(newsletter, contactId) {
+	try {
+		await markConfirmOpened({ accountId: newsletter.accountId, newsletterId: newsletter._id, contactId });
+	} catch (error) {
+		console.error("[confirm] Could not note the open:", error.message);
 	}
 }

@@ -47,6 +47,8 @@ const PUBLIC_PATHS = [
 	/^\/embed\/[^/]+(\/done)?$/,
 	/^\/api\/embed\/[^/]+$/,
 	/^\/api\/v1\//,
+	// Fork: the signup funnel, for a read key (app/api/signup-funnel/route.js).
+	/^\/api\/signup-funnel$/,
 	/^\/api\/webhooks\//,
 	/^\/api\/jobs\//,
 	/^\/api\/cron\//,
