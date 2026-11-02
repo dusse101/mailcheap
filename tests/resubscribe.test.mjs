@@ -232,3 +232,88 @@ describe("signing up again after leaving", () => {
 		assert.equal(contact.consent, undefined, "an API signup never carries consent");
 	});
 });
+
+// Moves every confirmation email of the account `ms` into the past.
+function ageConfirmations(user, ms) {
+	return m.Message.collection.updateMany(
+		{ accountId: user.accountId, kind: "confirmation" },
+		[{ $set: { createdAt: { $subtract: ["$createdAt", ms] } } }]
+	);
+}
+
+describe("sending the confirmation email again", () => {
+	const MINUTE = 60_000;
+
+	test("a pending contact gets it again after 10 minutes, 3 times a day at most, and again the next day", async () => {
+		const user = await customer("resend-pending@example.com");
+		const before = sesEmails.length;
+		const signUpAndFlush = async () => {
+			const response = await signUp(user, "waiting@example.org");
+			assert.equal(response.body.status, "pending");
+			await flushAfter();
+			return confirmationsSince(before).length;
+		};
+
+		assert.equal(await signUpAndFlush(), 1);
+		await ageConfirmations(user, 9 * MINUTE);
+		assert.equal(await signUpAndFlush(), 1, "9 minutes later, still waiting");
+		await ageConfirmations(user, 2 * MINUTE);
+		assert.equal(await signUpAndFlush(), 2, "past 10 minutes, it goes again");
+		await ageConfirmations(user, 11 * MINUTE);
+		assert.equal(await signUpAndFlush(), 3);
+		await ageConfirmations(user, 11 * MINUTE);
+		assert.equal(await signUpAndFlush(), 3, "a fourth within a day is one too many");
+		await ageConfirmations(user, 24 * 60 * MINUTE);
+		assert.equal(await signUpAndFlush(), 4, "a day later it goes again: no address is left without a link for good");
+		assert.equal(await signUpAndFlush(), 4, "and the 10 minutes start over");
+	});
+
+	test("one that never went out doesn't count", async () => {
+		const user = await customer("resend-failed@example.com");
+		const before = sesEmails.length;
+		await signUp(user, "retry@example.org");
+		await flushAfter();
+		assert.deepEqual(confirmationsSince(before), ["retry@example.org"]);
+		await m.Message.collection.updateMany({ accountId: user.accountId, kind: "confirmation" }, { $set: { status: "failed" } });
+
+		await signUp(user, "retry@example.org");
+		await flushAfter();
+		assert.deepEqual(confirmationsSince(before), ["retry@example.org", "retry@example.org"]);
+	});
+
+	test("someone who unsubscribed after their confirmations gets a fresh one on signing up again, and only with resubscribe", async () => {
+		const user = await customer("resend-left@example.com");
+		for (let i = 0; i < 3; i++) {
+			await signUp(user, "back@example.org");
+			await flushAfter();
+			await ageConfirmations(user, 11 * MINUTE);
+		}
+		const before = sesEmails.length;
+		await m.Contact.updateOne({ accountId: user.accountId, email: "back@example.org" }, { $set: { status: "active" } });
+		await unsubscribeByLink(user, "back@example.org");
+		await ageConfirmations(user, 24 * 60 * MINUTE);
+
+		const stock = await signUp(user, "back@example.org", {});
+		assert.equal(stock.body.status, "unsubscribed", "without resubscribe, nothing changes");
+		await flushAfter();
+		assert.deepEqual(confirmationsSince(before), []);
+
+		const again = await signUp(user, "back@example.org");
+		assert.equal(again.body.status, "pending");
+		await flushAfter();
+		assert.deepEqual(confirmationsSince(before), ["back@example.org"], "the 3 confirmations they got before don't block this one");
+		assert.equal((await signUp(user, "back@example.org")).body.status, "pending");
+		await flushAfter();
+		assert.deepEqual(confirmationsSince(before), ["back@example.org"], "within 10 minutes, once");
+	});
+
+	test("an active contact who signs up again gets nothing, and the answer is the same as for a new one", async () => {
+		const user = await customer("resend-active@example.com");
+		await importRows(user, [{ email: "here@example.org", status: "active" }]);
+		const before = sesEmails.length;
+		const active = await signUp(user, "here@example.org");
+		assert.deepEqual([active.status, active.body.status], [200, "active"]);
+		await flushAfter();
+		assert.equal(sesEmails.length, before);
+	});
+});
