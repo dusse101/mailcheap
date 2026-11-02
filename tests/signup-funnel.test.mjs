@@ -7,11 +7,12 @@ import { flushAfter } from "./stubs/next-server.mjs";
 
 // Fork: the signup funnel tacoandtell.com's daily report reads. Opening the confirm page notes confirmOpenedAt once and
 // still confirms nobody; the site's form passes the page it's on as signupPath; GET /api/signup-funnel counts each step
-// per day and lists who is still pending, for a read or full access key only.
+// per day or for all time and lists who is still pending, for MAILCHEAP_FUNNEL_KEY only: no API key, the read key included.
 let app;
 let m;
 let user;
 let keys;
+const FUNNEL_KEY = "test-funnel-key-not-a-real-secret";
 
 async function createKey(level) {
 	return (await as(user, () => m.apiKeys.createApiKey(null, form({ name: `${level} funnel key`, level })))).key;
@@ -51,7 +52,10 @@ before(async () => {
 	keys = { full: await createKey("full"), signups: await createKey("signups"), read: await createKey("read") };
 });
 
-after(() => app?.stop());
+after(() => {
+	delete process.env.MAILCHEAP_FUNNEL_KEY;
+	return app?.stop();
+});
 
 function load(contact) {
 	return m.Contact.findOne({ accountId: user.accountId, _id: contact._id ?? contact.id }).lean();
@@ -254,47 +258,82 @@ describe("the funnel's numbers", () => {
 		assert.deepEqual(capped.byDay, [{ date: "2026-10-31", signedUp: 2, confirmSent: 1, confirmOpened: 2, confirmed: 1 }], "UTC days");
 		assert.deepEqual(capped.pending.map(({ email }) => email), ["waiting@example.com"]);
 		assert.equal(capped.pendingTotal, 2);
+
+		// The queued confirmation, the welcome email and the other list's contact stay out; old signups count.
+		const lifetime = await m.funnel.getSignupFunnel({ newsletter, days: "all", timeZone: "America/Chicago", now: at("2026-10-31T18:00:00Z") });
+		assert.deepEqual([lifetime.range, lifetime.days, lifetime.from, lifetime.to, lifetime.timeZone], ["all", null, null, "2026-10-31", "America/Chicago"]);
+		assert.deepEqual(lifetime.totals, { signedUp: 6, confirmSent: 3, confirmOpened: 2, confirmed: 1 });
+		assert.deepEqual(lifetime.byDay, []);
+		assert.deepEqual(lifetime.pending, funnel.pending);
+		assert.equal(lifetime.pendingTotal, 2);
 	});
 });
 
 describe("GET /api/signup-funnel", () => {
-	test("needs a read or full access key", async () => {
-		assert.equal((await getFunnel("")).status, 401);
-		assert.equal((await getFunnel("", "mc_not_a_real_key")).status, 401);
-		const signups = await getFunnel("", keys.signups);
-		assert.equal(signups.status, 403);
-		assert.equal(signups.body.error.code, "forbidden");
-		for (const key of [keys.read, keys.full]) {
-			const response = await getFunnel("?newsletter=funnel-notes&days=3&timeZone=America/Chicago", key);
-			assert.equal(response.status, 200, JSON.stringify(response.body));
-			assert.equal(response.headers.get("cache-control"), "private, no-store");
-			assert.deepEqual(Object.keys(response.body), ["newsletter", "days", "from", "to", "timeZone", "totals", "byDay", "pending", "pendingTotal"]);
-			assert.equal(response.body.days, 3);
-			assert.equal(response.body.byDay.length, 3);
-			assert.equal(response.body.timeZone, "America/Chicago");
-			assert.ok(response.body.pending.every(({ email }) => email.endsWith("@example.com")));
-			const statuses = await m.Contact.find({ accountId: user.accountId, email: { $in: response.body.pending.map(({ email }) => email) }, newsletterId: user.newsletterId })
-				.distinct("status");
-			assert.deepEqual(statuses, ["pending"]);
+	test("is off without MAILCHEAP_FUNNEL_KEY, and never falls back to an API key", async () => {
+		delete process.env.MAILCHEAP_FUNNEL_KEY;
+		for (const key of [undefined, keys.read, keys.full, FUNNEL_KEY]) {
+			const response = await getFunnel("?newsletter=funnel-notes", key);
+			assert.equal(response.status, 503);
+			assert.equal(response.body.error.code, "unavailable");
 		}
 	});
 
+	test("takes the funnel key only: the read, full and signups keys are refused", async () => {
+		process.env.MAILCHEAP_FUNNEL_KEY = FUNNEL_KEY;
+		for (const key of [undefined, "mc_not_a_real_key", keys.read, keys.full, keys.signups, `${FUNNEL_KEY}x`, FUNNEL_KEY.slice(0, -1)]) {
+			const response = await getFunnel("?newsletter=funnel-notes", key);
+			assert.equal(response.status, 401, String(key));
+			assert.equal(response.body.error.code, "unauthorized");
+		}
+		const query = await getFunnel(`?newsletter=funnel-notes&key=${FUNNEL_KEY}&token=${FUNNEL_KEY}`);
+		assert.equal(query.status, 401, "only the Authorization header carries it");
+
+		const response = await getFunnel("?newsletter=funnel-notes&days=3&timeZone=America/Chicago", FUNNEL_KEY);
+		assert.equal(response.status, 200, JSON.stringify(response.body));
+		assert.equal(response.headers.get("cache-control"), "private, no-store");
+		assert.deepEqual(Object.keys(response.body), ["newsletter", "range", "days", "from", "to", "timeZone", "totals", "byDay", "pending", "pendingTotal"]);
+		assert.equal(response.body.range, "days");
+		assert.equal(response.body.days, 3);
+		assert.equal(response.body.byDay.length, 3);
+		assert.equal(response.body.timeZone, "America/Chicago");
+		assert.ok(response.body.pending.every(({ email }) => email.endsWith("@example.com")));
+		const statuses = await m.Contact.find({ accountId: user.accountId, email: { $in: response.body.pending.map(({ email }) => email) }, newsletterId: user.newsletterId })
+			.distinct("status");
+		assert.deepEqual(statuses, ["pending"]);
+	});
+
+	test("days=all answers lifetime totals with no byDay", async () => {
+		process.env.MAILCHEAP_FUNNEL_KEY = FUNNEL_KEY;
+		const response = await getFunnel("?newsletter=funnel-counts&days=all&timeZone=America/Chicago", FUNNEL_KEY);
+		assert.equal(response.status, 200, JSON.stringify(response.body));
+		assert.equal(response.body.range, "all");
+		assert.equal(response.body.days, null);
+		assert.deepEqual(response.body.byDay, []);
+		assert.deepEqual(response.body.totals, { signedUp: 6, confirmSent: 3, confirmOpened: 2, confirmed: 1 });
+		assert.equal(response.body.pendingTotal, 2);
+	});
+
 	test("days, limit and the time zone stay in bounds", async () => {
-		const wide = await getFunnel("?days=999&limit=0&timeZone=Not/AZone", keys.read);
+		process.env.MAILCHEAP_FUNNEL_KEY = FUNNEL_KEY;
+		const wide = await getFunnel("?newsletter=funnel-notes&days=999&limit=0&timeZone=Not/AZone", FUNNEL_KEY);
 		assert.equal(wide.status, 200);
 		assert.equal(wide.body.days, 90);
 		assert.equal(wide.body.timeZone, "UTC");
 		assert.ok(wide.body.pending.length <= 1);
-		assert.equal((await getFunnel("?days=abc", keys.read)).body.days, 7);
+		assert.equal((await getFunnel("?newsletter=funnel-notes&days=abc", FUNNEL_KEY)).body.days, 7);
+		assert.equal((await getFunnel("?newsletter=funnel-notes&days=ALL", FUNNEL_KEY)).body.range, "days");
 	});
 
-	test("another account's newsletter is not found", async () => {
-		const stranger = await signIn("funnel-stranger@example.com");
-		await activate(stranger);
-		await createNewsletter(stranger, "stranger-notes");
-		const response = await getFunnel("?newsletter=stranger-notes", keys.read);
-		assert.equal(response.status, 404);
-		assert.equal(response.body.error.code, "not_found");
+	test("needs a newsletter that exists", async () => {
+		process.env.MAILCHEAP_FUNNEL_KEY = FUNNEL_KEY;
+		const missing = await getFunnel("", FUNNEL_KEY);
+		assert.equal(missing.status, 400);
+		assert.equal(missing.body.error.code, "validation_failed");
+		for (const slug of ["no-such-list", "%24ne", "funnel-notes%00"]) {
+			const response = await getFunnel(`?newsletter=${slug}`, FUNNEL_KEY);
+			assert.equal(response.status, 404, slug);
+		}
 	});
 
 	test("is reachable without a session, like the REST API", async () => {
