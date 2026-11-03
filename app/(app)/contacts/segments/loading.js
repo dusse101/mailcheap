@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function Loading() {
 	return (
 		<>
-			<HeaderPage title="Segments" backHref="/contacts">
+			<HeaderPage title="Segments" parent={{ label: "Contacts", href: "/contacts" }}>
 				<Skeleton className="h-9 w-32 rounded-lg" />
 			</HeaderPage>
 			<ul aria-hidden="true" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

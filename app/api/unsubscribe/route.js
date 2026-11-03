@@ -13,23 +13,22 @@ const RECENT_CAMPAIGNS = 5;
 // Gmail and Yahoo send one-click requests from shared mail servers, so keep this generous.
 const RATE_LIMIT = { name: "unsubscribe", limit: 60, window: "1 m" };
 
-// Links don't carry the campaign, so the unsubscribe counts for the latest campaign sent to them.
-async function creditLatestCampaign({ accountId, contactId, newsletterId }) {
+// Links don't carry the campaign, so the unsubscribe counts for the latest campaign sent to them, whose email keeps when:
+// once per email, however many times they come back and leave through it.
+async function creditLatestCampaign({ accountId, contactId, newsletterId, at }) {
 	const campaigns = await Campaign.find({ accountId, newsletterId, startedAt: { $ne: null } })
 		.sort({ startedAt: -1 })
 		.limit(RECENT_CAMPAIGNS)
 		.select({ _id: 1 })
 		.lean();
 	for (const { _id } of campaigns) {
-		const wasSent = await Message.exists({
-			accountId,
-			kind: "campaign",
-			campaignId: _id,
-			contactId,
-			sentAt: { $ne: null },
-		});
-		if (!wasSent) continue;
-		await Campaign.updateOne({ accountId, _id }, { $inc: { "stats.unsubscribed": 1 } });
+		const { matchedCount, modifiedCount } = await Message.updateOne(
+			{ accountId, kind: "campaign", campaignId: _id, contactId, sentAt: { $ne: null } },
+			{ $min: { unsubscribedAt: at } },
+			{ timestamps: false }
+		);
+		if (!matchedCount) continue;
+		if (modifiedCount) await Campaign.updateOne({ accountId, _id }, { $inc: { "stats.unsubscribed": 1 } });
 		return;
 	}
 }
@@ -53,7 +52,7 @@ async function unsubscribe({ contactId, newsletterId }, via) {
 	if (!previous) return;
 
 	console.log(`[unsubscribe] Contact ${contactId} unsubscribed from newsletter ${newsletterId}`);
-	await creditLatestCampaign({ accountId: previous.accountId, contactId, newsletterId }).catch((error) =>
+	await creditLatestCampaign({ accountId: previous.accountId, contactId, newsletterId, at }).catch((error) =>
 		console.error("[unsubscribe] Could not credit the campaign:", error.message)
 	);
 }

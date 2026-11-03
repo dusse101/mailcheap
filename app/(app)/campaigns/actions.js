@@ -57,18 +57,44 @@ export async function setCampaignPublishTo(id, publishTo) {
 
 // The preview's reader picker: the newsletter's active contacts with what's typed in their address or first name, the
 // newest before anything is, each with its field values, which the preview fills in, and the hash its picture comes
-// from (AvatarContact).
-export async function findPreviewContacts(newsletterId, query) {
+// from (AvatarContact). segmentIds: the segments the issue's sections name, of which each contact gets those it's in,
+// along with its tags (lib/sections.js).
+export async function findPreviewContacts(newsletterId, query, segmentIds = []) {
+	const inSegments = Array.isArray(segmentIds) ? segmentIds.map(String).slice(0, 10) : [];
 	const { output, failure } = await runDashboardAction("search_contacts", {
 		newsletter: String(newsletterId ?? ""),
 		query: String(query ?? "").slice(0, 100),
 		status: "active",
 		limit: 8,
+		...(inSegments.length > 0 && { inSegments }),
 	});
 	if (failure) return toFormError(failure);
 	return {
-		contacts: output.contacts.map(({ id, email, firstName, fields }) => ({ id, email, firstName, fields, gravatarHash: gravatarHash(email) })),
+		contacts: output.contacts.map(({ id, email, firstName, fields, tags, inSegments: member = [] }) => ({
+			id,
+			email,
+			firstName,
+			fields,
+			tags,
+			segments: Object.fromEntries(inSegments.map((segmentId) => [segmentId, member.includes(segmentId)])),
+			gravatarHash: gravatarHash(email),
+		})),
 	};
+}
+
+// How many of the readers a draft goes to have a tag or are in a segment, for its sections: tag:<tag> or segment:<id>.
+export async function countSectionReaders(id, groups) {
+	const { output, failure } = await runDashboardAction("count_section_readers", {
+		id: String(id),
+		groups: Array.isArray(groups) ? groups.map(String).slice(0, 10) : [],
+	});
+	return failure ? toFormError(failure) : output;
+}
+
+// Every tag and segment with how many of the readers a draft goes to each picks, for the menu its sections pick from.
+export async function countAllSectionReaders(id) {
+	const { output, failure } = await runDashboardAction("count_section_readers", { id: String(id), all: true });
+	return failure ? toFormError(failure) : output;
 }
 
 export async function sendTestCampaign(id) {
@@ -143,6 +169,7 @@ export async function toggleArchivePin(id) {
 	const { failure } = await runDashboardAction("update_campaign_archive", { id: String(id), pinned: !current.output.archivePinned });
 	if (failure) return toFormError(failure);
 	revalidatePath(`/campaigns/${id}`);
+	revalidatePath(`/campaigns/${id}/web`);
 	return { ok: true };
 }
 
@@ -170,6 +197,25 @@ export async function unpublishCampaign(id) {
 	revalidatePath("/campaigns");
 	if (!output.deleted) revalidatePath(`/campaigns/${id}`);
 	return { ok: true, deleted: output.deleted };
+}
+
+// The issue's page on the website (update_campaign_archive): a draft's title, description and picture save as they're
+// picked, and a page that's out changes all at once, its content too, once the content check has read it. content: null
+// shows the email's content again.
+export async function updateWebPage(id, values) {
+	const { title, description, image, content, format } = values ?? {};
+	const { failure } = await runDashboardAction("update_campaign_archive", {
+		id: String(id),
+		...(title !== undefined && { title: String(title).slice(0, MAX_SUBJECT_LENGTH) }),
+		...(description !== undefined && { description: String(description).slice(0, MAX_PREVIEW_TEXT_LENGTH) }),
+		...(image !== undefined && { image: String(image) }),
+		...(content !== undefined && { content: content === null ? null : String(content) }),
+		...(format && { format: String(format) }),
+	});
+	if (failure) return toFormError(failure);
+	refresh(id);
+	revalidatePath(`/campaigns/${id}/web`);
+	return { ok: true };
 }
 
 // The page lives at /p/<slug> once the issue goes out. A draft without one gets the subject's slug then.

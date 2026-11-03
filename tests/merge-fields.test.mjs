@@ -7,6 +7,7 @@ import {
 	fillMergeTags,
 	findBrokenMergeTags,
 	findMergeTags,
+	findTagsWithoutFallback,
 	formatMergeValue,
 	withMergeFallbacks,
 	withoutMergeTags,
@@ -121,7 +122,7 @@ describe("field merge tags", () => {
 
 	test("the review step takes the account's tags, still points out any other, and counts the subject with fallbacks", () => {
 		const rendered = { html: "<p>{{unsubscribe_url}}</p>", bytes: 100 };
-		const base = { previewText: "Hi {{seats|no}}", testSentAt: new Date(), body: "<p>{{birthday}} {{PLAN|free}}</p>" };
+		const base = { previewText: "Hi {{seats|no}}", testSentAt: new Date(), body: "<p>{{birthday|soon}} {{PLAN|free}}</p>" };
 		const checks = (campaign, contactFields) =>
 			getPresendChecks({ campaign: { ...base, ...campaign }, newsletter: { postalAddress: "1 Main St" }, rendered, contactFields, isSendingEnabled: true })
 				.checks;
@@ -133,6 +134,41 @@ describe("field merge tags", () => {
 		assert.match(withoutFields.message, /^\{\{plan\|free\}\} goes out as written/);
 		const subject = `${"x".repeat(60)} {{plan|free}}`;
 		assert.equal(checks({ subject }, FIELDS).find(({ id }) => id === "subject-length").detail, "65", "the fallback's length, not the tag's");
+	});
+
+	test("a name or field without a fallback leaves a gap, which the review step points out after tags that go out as written", () => {
+		const fields = [...FIELDS, { key: "tier", label: "VIP tier", type: "text" }];
+		assert.deepEqual(findTagsWithoutFallback(["Hi {{first_name}}, {{ Plan }} {{plan|}} {{seats|0}} {{nope}}", "<p>{{first_name}} {{tier}}</p>"], fields), [
+			{ tag: "{{first_name}}", name: "first name" },
+			{ tag: "{{ Plan }}", name: "plan" },
+			{ tag: "{{tier}}", name: "VIP tier" },
+		]);
+		assert.deepEqual(findTagsWithoutFallback(["{{plan}}"]), [], "another account's field goes out as written instead");
+
+		const rendered = { html: "<p>{{unsubscribe_url}}</p>", bytes: 100 };
+		const checks = (campaign) =>
+			getPresendChecks({
+				campaign: { subject: "Your plan", previewText: "Hi", testSentAt: new Date(), body: "<p>Hi</p>", ...campaign },
+				newsletter: { postalAddress: "1 Main St" },
+				rendered,
+				contactFields: FIELDS,
+				isSendingEnabled: true,
+			}).checks.find(({ id }) => id === "merge-tags");
+		const gap = checks({ subject: "Your {{plan}} plan" });
+		assert.deepEqual([gap.isWarning, gap.message, gap.words, gap.field, gap.detail], [
+			true,
+			"{{plan}} leaves a gap for readers with no plan: add | and a word inside the braces",
+			"{{plan}}",
+			"subject",
+			null,
+		]);
+		const both = checks({ body: "<p>Hi {{first_name}}, {{FNAME}}</p>" });
+		assert.deepEqual([both.message, both.field, both.detail], [
+			"{{FNAME}} goes out as written: only {{first_name}} and your contact fields are filled in",
+			"content",
+			"2",
+		]);
+		assert.equal(checks({ body: "<p>Hi {{first_name|}}</p>" }), undefined, "a | alone leaves the gap on purpose");
 	});
 
 	test("a recipient's email and the dashboard's preview fill the same values the same way", () => {

@@ -42,11 +42,11 @@ test("the tags other contacts have are offered under the field, with how many ha
 	assert.doesNotMatch(full, /role="option"/, "nothing to pick once it's full");
 });
 
-test("typing narrows the tags offered, those starting with it first", () => {
-	const suggestions = ["customer", "beta", "ecu", "cupcake", "vip"].map((name) => ({ name, contacts: 1 }));
+test("typing a new tag keeps the others offered, and only takes off the one it spells", () => {
+	const suggestions = ["customer", "beta", "cupcake"].map((name) => ({ name, contacts: 1 }));
 	const names = (value, text) => pickSuggestions(suggestions, value, text).map(({ name }) => name);
-	assert.deepEqual(names([], ""), ["customer", "beta", "ecu", "cupcake", "vip"], "the most used first, as given");
-	assert.deepEqual(names([], " CU "), ["customer", "cupcake", "ecu"]);
-	assert.deepEqual(names(["customer"], "cu"), ["cupcake", "ecu"], "not the ones it has");
-	assert.deepEqual(names([], "zz"), []);
+	assert.deepEqual(names([], ""), ["customer", "beta", "cupcake"], "the most used first, as given");
+	assert.deepEqual(names([], "cu"), ["customer", "beta", "cupcake"], "all of them, in the same order, while it's typed");
+	assert.deepEqual(names([], " Beta "), ["customer", "cupcake"], "not the one typed, which Enter adds");
+	assert.deepEqual(names(["customer"], ""), ["beta", "cupcake"], "not the ones it has");
 });

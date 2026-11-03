@@ -8,11 +8,17 @@ import { SigninAside, SiteAnalytics } from "@/components/SiteExtensions";
 import { DELETION_GRACE_DAYS } from "@/lib/account-deletion";
 import { getSession, getSignupError, isGoogleEnabled } from "@/lib/auth";
 import { BOTID_SIGNIN, isBotIdEnabled } from "@/lib/bot-check";
-import { isCloud } from "@/lib/config";
+import { getAppUrl, isCloud } from "@/lib/config";
 import { readOAuthRequest } from "@/lib/oauth";
+import { JOIN_PATH } from "@/lib/team-rules";
 import { toSafeNextPath } from "@/lib/validation";
 
-export const metadata = { title: "Sign in" };
+// People search for MailCheap Cloud's sign-in by name, so search engines may list it there, as one address whatever
+// the query its links carry. A self-hosted server's stays out of search like the rest of its dashboard.
+export function generateMetadata() {
+	if (!isCloud()) return { title: "Sign in" };
+	return { title: "Sign in", robots: { index: true, follow: true }, alternates: { canonical: `${getAppUrl()}/signin` } };
+}
 
 // Also where an app connecting with OAuth (ChatGPT, Claude) sends people who aren't signed in: Better Auth
 // adds the signed authorization request to the query, and signing in carries on to the consent page.
@@ -23,7 +29,7 @@ export default async function SigninPage({ searchParams }) {
 	const oauthRequest = await readOAuthRequest(params);
 	if (!oauthRequest && (await getSession())) redirect(nextPath);
 	const oauthQuery = oauthRequest && !oauthRequest.isExpired ? oauthRequest.query : null;
-	const intro = getIntro(oauthRequest, deleted !== undefined);
+	const intro = getIntro(oauthRequest, deleted !== undefined, nextPath.startsWith(`${JOIN_PATH}/`));
 
 	return (
 		<LayoutSplit aside={SigninAside && <SigninAside />}>
@@ -62,12 +68,13 @@ export default async function SigninPage({ searchParams }) {
 	);
 }
 
-// Only what changes what to do: an app connecting, an expired link, an account just deleted, or a server that lets
-// few emails in.
-function getIntro(oauthRequest, isDeleted) {
+// Only what changes what to do: an app connecting, an expired link, an account just deleted, an invitation to a team, or
+// a server that lets few emails in.
+function getIntro(oauthRequest, isDeleted, isInvitation) {
 	if (oauthRequest?.isExpired) return "This sign-in link expired. Go back to the app and connect MailCheap again.";
 	if (oauthRequest) return `${oauthRequest.client.name} wants to connect to your MailCheap account. Sign in first.`;
 	if (isDeleted) return `Your account is deleted. Sign in within ${DELETION_GRACE_DAYS} days to restore it.`;
+	if (isInvitation) return "You're invited to a newsletter's team. Sign in with the address your invitation went to.";
 	if (!isCloud()) return "Only the emails this server allows can sign in.";
 	return null;
 }

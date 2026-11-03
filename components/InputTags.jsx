@@ -7,8 +7,8 @@ import { formatCount, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Tags as chips: Enter, a comma or Tab adds what's typed, Backspace in the empty field takes the last one off. Under it,
-// the tags the newsletter's contacts already have, narrowed by what's typed: a click adds one, and so do the arrow keys
-// then Enter. suggestions: [{ name, contacts }], the most used first.
+// the tags the newsletter's contacts already have: a click adds one, and so do the arrow keys then Enter.
+// suggestions: [{ name, contacts }], the most used first.
 export default function InputTags({
 	value,
 	onChange,
@@ -137,10 +137,9 @@ export default function InputTags({
 	);
 }
 
-// The tags to offer: the ones not given yet that contain what's typed, those starting with it first, then the most used.
+// The tags to offer, in the order given: the ones not given yet, all of them while a new one is typed, but the one typed,
+// which Enter adds.
 export function pickSuggestions(suggestions, value, text) {
-	const query = text.replace(/\s+/g, " ").trim().toLowerCase();
-	return suggestions
-		.filter(({ name }) => !value.includes(name) && name.includes(query))
-		.sort((a, b) => Number(!a.name.startsWith(query)) - Number(!b.name.startsWith(query)));
+	const typed = cleanTag(text);
+	return suggestions.filter(({ name }) => !value.includes(name) && name !== typed);
 }

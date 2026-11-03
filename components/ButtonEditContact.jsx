@@ -6,12 +6,12 @@ import DialogContactDetails from "@/components/DialogContactDetails";
 import { Button } from "@/components/ui/button";
 
 // Opens the contact's fields: its first name and the account's fields. contact: what DialogContactDetails edits.
-export default function ButtonEditContact({ contact, variant = "outline", size = "default", className, children = "Edit fields" }) {
+export default function ButtonEditContact({ contact, variant = "outline", size = "default", children = "Edit fields" }) {
 	const [isOpen, setIsOpen] = useState(false);
 
 	return (
 		<>
-			<Button variant={variant} size={size} onClick={() => setIsOpen(true)} className={className}>
+			<Button variant={variant} size={size} onClick={() => setIsOpen(true)}>
 				<Pencil data-icon="inline-start" />
 				{children}
 			</Button>

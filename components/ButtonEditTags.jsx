@@ -6,12 +6,12 @@ import DialogContactTags from "@/components/DialogContactTags";
 import { Button } from "@/components/ui/button";
 
 // Opens the contact's tags. contact: what DialogContactTags edits.
-export default function ButtonEditTags({ contact, variant = "outline", size = "default", className, children = "Edit tags" }) {
+export default function ButtonEditTags({ contact, variant = "outline", size = "default", children = "Edit tags" }) {
 	const [isOpen, setIsOpen] = useState(false);
 
 	return (
 		<>
-			<Button variant={variant} size={size} onClick={() => setIsOpen(true)} className={className}>
+			<Button variant={variant} size={size} onClick={() => setIsOpen(true)}>
 				<Tag data-icon="inline-start" />
 				{children}
 			</Button>

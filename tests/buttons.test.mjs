@@ -55,6 +55,18 @@ describe("what an issue keeps of a button", () => {
 		assert.equal(cleanRichHtml(button("Hi", STORY, "left")), button("Hi", STORY, "left"), "the editor's own markup stays as it is");
 	});
 
+	test("a button or a link keeps the link MailCheap fills in for each reader of the confirmation and last-chance emails, and nothing like it", () => {
+		for (const href of ["{{confirm_url}}", "{{keep_url}}"]) {
+			assert.equal(cleanRichHtml(button("Yes", href)), button("Yes", href), href);
+			assert.equal(cleanRichHtml(`<p><a href="${href}">Yes</a></p>`), `<p><a href="${href}">Yes</a></p>`, `${href} in a link`);
+			assert.ok(emailBody(render(button("Yes", href)).html).includes(`<a href="${href}" style="display:inline-block;`), `${href} drawn as a button`);
+			assert.equal(findButtonProblem(button("Yes", href)), null);
+		}
+		for (const href of ["{{first_name}}", "{{confirm_url}}x", "{{unsubscribe_url}}", "javascript:{{keep_url}}"]) {
+			assert.equal(cleanRichHtml(button("Yes", href)), button("Yes"), href);
+		}
+	});
+
 	test("the website sanitizes it to the same markup, which its styles draw as a button", () => {
 		const html = `<p>Hi</p>${button("Go", "https://example.com/a?b=1&c=2", "right")}<div data-button="" data-align="evil" data-x="1"><a href="javascript:alert(1)" target="_top">Bad</a></div>`;
 		assert.deepEqual(renderIssueBody({ format: "rich", html }), {
@@ -236,7 +248,11 @@ describe("what holds an issue with a button", () => {
 		const check = checks.find(({ id }) => id === "buttons");
 		assert.deepEqual(check, { id: "buttons", label: "Buttons", isOk: false, message: BUTTON_PROBLEM });
 		assert.deepEqual(blocking.map(({ id }) => id), ["buttons"]);
-		assert.deepEqual(getCheckFix(check, { newsletterId: NEWSLETTER._id }), { label: "Edit content", field: "body" });
+		assert.deepEqual(getCheckFix(check, { newsletterId: NEWSLETTER._id }), {
+			label: "Edit content",
+			field: "body",
+			problem: { id: "buttons", message: BUTTON_PROBLEM },
+		});
 
 		const complete = getPresendChecks({ ...input, campaign: { ...campaign, body: `<p>Hi</p>${button("Join", STORY)}` } });
 		assert.equal(complete.checks.some(({ id }) => id === "buttons"), false, "no check to show while every button works");

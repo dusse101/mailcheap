@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
-import { Check, ChevronDown, Loader2, Search, UserRound } from "lucide-react";
+import { Check, ChevronDown, Loader2, Search, UserRound, UsersRound } from "lucide-react";
 import { findPreviewContacts } from "@/app/(app)/campaigns/actions";
 import AvatarContact from "@/components/AvatarContact";
 import LinkHelpFields from "@/components/LinkHelpFields";
@@ -13,11 +13,13 @@ const SEARCH_DELAY_MS = 200;
 // A touch screen's keyboard would cover the list it opens on, so there the search field waits for a tap.
 const FINE_POINTER = "(pointer: fine)";
 
-// Who the email preview shows the email to: the sample reader, or one of the newsletter's active contacts, the newest
-// first or found by any part of their address or first name. contact: null for the sample reader. The search field keeps
-// the focus while the list is announced as its options. The list is dark in both themes, like the preview's controls
-// around it, and opaque, so the dimmed dashboard never shows through it.
-export default function PickerReader({ newsletterId, contact, onChange }) {
+// Who the email preview shows the email to: the sample reader, one of the readers the issue's sections name (groups,
+// lib/sections.js) until a search is typed, or one of the newsletter's active contacts, the newest first or found by any
+// part of their address or first name, each with whether they're in the segments the sections name (segmentIds).
+// contact: null for the sample reader. The search field keeps the focus while the list is announced as its options. The
+// list is dark in both themes, like the preview's controls around it, and opaque, so the dimmed dashboard never shows
+// through it.
+export default function PickerReader({ newsletterId, contact, groups = [], segmentIds = [], onChange }) {
 	const listId = useId();
 	const inputRef = useRef(null);
 	const timerRef = useRef(null);
@@ -28,7 +30,8 @@ export default function PickerReader({ newsletterId, contact, onChange }) {
 	const [active, setActive] = useState(0);
 	const [isSearching, startSearching] = useTransition();
 	const contacts = results?.contacts ?? [];
-	const options = [null, ...contacts];
+	const shownGroups = query.trim() ? [] : groups;
+	const options = [null, ...shownGroups, ...contacts];
 	const activeIndex = Math.min(active, options.length - 1);
 	// Enter picks a contact only from the list for what's typed, not one still showing for the text before.
 	const isStale = (results?.query ?? null) !== query.trim();
@@ -40,7 +43,7 @@ export default function PickerReader({ newsletterId, contact, onChange }) {
 	function search(text) {
 		const request = ++requestRef.current;
 		startSearching(async () => {
-			const result = await findPreviewContacts(newsletterId, text).catch(() => ({ error: "Couldn't load your contacts, try again." }));
+			const result = await findPreviewContacts(newsletterId, text, segmentIds).catch(() => ({ error: "Couldn't load your contacts, try again." }));
 			if (request === requestRef.current) setResults({ query: text, ...result });
 		});
 	}
@@ -93,7 +96,7 @@ export default function PickerReader({ newsletterId, contact, onChange }) {
 					<AvatarReader contact={contact} className="bg-white/15 text-white" />
 					<span className="truncate">
 						<span className="sr-only">Preview as </span>
-						{contact ? contact.firstName || contact.email : "Sample reader"}
+						{contact ? (contact.isGroup ? contact.name : contact.firstName || contact.email) : "Sample reader"}
 					</span>
 					<ChevronDown aria-hidden="true" className="size-4 shrink-0 text-white/60" />
 				</button>
@@ -143,24 +146,47 @@ export default function PickerReader({ newsletterId, contact, onChange }) {
 							onPoint={() => setActive(0)}
 							onPick={() => pick(null)}
 						/>
-						{contacts.length > 0 && (
-							<div role="group" aria-labelledby={`${listId}-contacts`}>
-								<p id={`${listId}-contacts`} className="px-2 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
-									{results.query ? "Contacts" : "Newest contacts"}
+						{shownGroups.length > 0 && (
+							<div role="group" aria-labelledby={`${listId}-groups`}>
+								<p id={`${listId}-groups`} className="px-2 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
+									Readers your sections name
 								</p>
-								{contacts.map((item, index) => (
+								{shownGroups.map((item, index) => (
 									<OptionReader
 										key={item.id}
 										id={optionId(index + 1)}
 										contact={item}
-										name={item.firstName || item.email}
-										detail={item.firstName ? item.email : "No first name"}
+										name={item.name}
+										detail={`Sample reader, called ${SAMPLE_FIRST_NAME}`}
 										isActive={activeIndex === index + 1}
 										isPicked={contact?.id === item.id}
 										onPoint={() => setActive(index + 1)}
 										onPick={() => pick(item)}
 									/>
 								))}
+							</div>
+						)}
+						{contacts.length > 0 && (
+							<div role="group" aria-labelledby={`${listId}-contacts`}>
+								<p id={`${listId}-contacts`} className="px-2 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
+									{results.query ? "Contacts" : "Newest contacts"}
+								</p>
+								{contacts.map((item, index) => {
+									const position = shownGroups.length + index + 1;
+									return (
+										<OptionReader
+											key={item.id}
+											id={optionId(position)}
+											contact={item}
+											name={item.firstName || item.email}
+											detail={item.firstName ? item.email : "No first name"}
+											isActive={activeIndex === position}
+											isPicked={contact?.id === item.id}
+											onPoint={() => setActive(position)}
+											onPick={() => pick(item)}
+										/>
+									);
+								})}
 							</div>
 						)}
 					</div>
@@ -198,12 +224,14 @@ function OptionReader({ id, contact = null, name, detail, isActive, isPicked, on
 	);
 }
 
-// A contact's picture, as the Contacts page shows it, or a person for the sample reader.
+// A contact's picture, as the Contacts page shows it, a person for the sample reader, or people for the readers a
+// section names.
 function AvatarReader({ contact, className }) {
-	if (contact) return <AvatarContact email={contact.email} gravatarHash={contact.gravatarHash} size={32} />;
+	if (contact && !contact.isGroup) return <AvatarContact email={contact.email} gravatarHash={contact.gravatarHash} size={32} />;
+	const Icon = contact ? UsersRound : UserRound;
 	return (
 		<span aria-hidden="true" className={cn("grid size-8 shrink-0 place-items-center rounded-full", className)}>
-			<UserRound className="size-4" />
+			<Icon className="size-4" />
 		</span>
 	);
 }

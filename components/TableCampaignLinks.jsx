@@ -9,13 +9,13 @@ const SHOWN = 50;
 
 // A sent issue's clicked links, most clicked first: the contacts who clicked each, every click, and each link's share of
 // the contacts who clicked any. Labels are what the email shows: the link's text, or its picture's alt text. Only for an
-// issue with clicked links: the report's Clicked card already says when there are none.
-export default function TableCampaignLinks({ stats, html, webUrl, style }) {
+// issue with clicked links: the report's Links tab says when there are none.
+export default function TableCampaignLinks({ stats, html, webUrl }) {
 	const labels = getLinkLabels(html, { webUrl });
 	const links = stats.links.slice(0, SHOWN);
 
 	return (
-		<div style={style} className="flex flex-col gap-2 animate-enter">
+		<div className="flex flex-col gap-2">
 			<div className="overflow-hidden rounded-xl shadow-border">
 				<Table className="table-fixed">
 					<TableHeader>

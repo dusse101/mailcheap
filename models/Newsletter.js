@@ -56,6 +56,14 @@ const newsletterSchema = new mongoose.Schema(
 			bio: { type: String, trim: true },
 			imageUrl: { type: String, trim: true },
 		},
+		// The analytics tools its website loads, each by its ID alone (lib/website-analytics.js).
+		analytics: {
+			googleAnalytics: { type: String, trim: true },
+			googleTagManager: { type: String, trim: true },
+			metaPixel: { type: String, trim: true },
+		},
+		// Its own HTML for the head of its website's pages, only ever sent on its own domain (lib/website-code.js).
+		customCode: { type: String },
 		// New signups get an email with a link and only join once they click it (confirmed opt-in).
 		requireConfirmation: { type: Boolean, default: false },
 		// Checked when an issue is sent (lib/cleanup.js). Empty numbers use the newsletter's defaults.
@@ -64,22 +72,40 @@ const newsletterSchema = new mongoose.Schema(
 			issues: { type: Number, min: 1 },
 			days: { type: Number, min: 1 },
 		},
+		// Its own emails (lib/newsletter-emails.js), each written in the editor (format rich, in html) or in Markdown, as
+		// they were before it and as the API takes them.
 		welcome: {
 			enabled: { type: Boolean, default: false },
 			subject: { type: String, trim: true },
 			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
 			markdown: { type: String },
+			html: { type: String },
 		},
 		// The newsletter's own confirmation email; the built-in one goes out until it has one.
 		confirmation: {
 			subject: { type: String, trim: true },
 			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
 			markdown: { type: String },
+			html: { type: String },
 		},
-		// The content check of its own welcome and confirmation emails (lib/signup-email-review.js), each of the content it
-		// read. Apart from welcome and confirmation, which a save replaces whole.
+		// The newsletter's own last-chance email for its list cleanup (lib/last-chance-content.js); the built-in one goes out
+		// until it has one.
+		lastChance: {
+			subject: { type: String, trim: true },
+			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
+			markdown: { type: String },
+			html: { type: String },
+		},
+		// The content check of its own welcome, confirmation and last-chance emails (lib/signup-email-review.js), each of the
+		// content it read. Apart from the emails, which a save replaces whole.
 		reviews: {
-			type: new mongoose.Schema({ welcome: contentReviewSchema, confirmation: contentReviewSchema }, { _id: false }),
+			type: new mongoose.Schema(
+				{ welcome: contentReviewSchema, confirmation: contentReviewSchema, lastChance: contentReviewSchema },
+				{ _id: false }
+			),
 			select: false,
 		},
 		// The signup form its owner pastes on their own site (lib/signup-form.js), off until they turn it on. No domains:
@@ -113,10 +139,12 @@ const newsletterSchema = new mongoose.Schema(
 			at: { type: Date },
 		},
 		// Its get-started panel (lib/get-started.js), closed by its owner or finished: either hides it for good, on every
-		// device. The account's other newsletters keep theirs.
+		// device. The account's other newsletters keep theirs. themeChosenAt: a theme preset picked, MailCheap's own
+		// included, which does the panel's design step.
 		getStarted: {
 			dismissedAt: { type: Date },
 			finishedAt: { type: Date },
+			themeChosenAt: { type: Date },
 		},
 		// Its look on its website and in its emails (lib/themes.js): a preset, and only what was changed on top of it.
 		theme: {

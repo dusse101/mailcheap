@@ -229,7 +229,12 @@ describe("warnings in the review step", () => {
 		const body = `<p>${link("Read more", "#")}</p>`;
 		const { checks } = getPresendChecks({ ...input, campaign: { ...campaign, subject: "Hi *|FNAME|* {{FNAME}}", body } });
 		const fixes = Object.fromEntries(checks.map((check) => [check.id, getCheckFix(check, { newsletterId: "n1" })]));
-		assert.deepEqual(fixes.links, { label: "Edit content", field: "body", words: "Read more" });
+		assert.deepEqual(fixes.links, {
+			label: "Edit content",
+			field: "body",
+			words: "Read more",
+			problem: { id: "links", message: "The link on “Read more” has no address" },
+		});
 		assert.deepEqual(fixes["merge-tags"], { label: "Edit subject", field: "subject", words: "{{FNAME}}" });
 
 		const inPreview = getPresendChecks({ ...input, campaign: { ...campaign, previewText: "Hey {{NAME}}", body: "<p>Hi</p>" } });

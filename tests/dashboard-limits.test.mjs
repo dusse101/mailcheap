@@ -34,7 +34,7 @@ async function customer(email) {
 	const user = await signIn(email);
 	await activate(user);
 	const slug = email.split("@")[0];
-	const settings = { name: slug, slug, postalAddress: "1 Main St, Paris", welcomeSubject: "Welcome", welcomeMarkdown: "Glad you're here." };
+	const settings = { name: slug, slug, postalAddress: "1 Main St, Paris", welcomeSubject: "Welcome", welcomeContent: "Glad you're here." };
 	const url = await as(user, () => catchRedirect(m.newsletters.saveNewsletter(null, form(settings))));
 	user.newsletterId = url.split("/").at(-1);
 	return user;
@@ -66,6 +66,7 @@ test("the dashboard counts the hourly limits of what costs something each call",
 			"check_website_domain",
 			"get_campaign_tips",
 			"import_contacts",
+			"invite_team_member",
 			"open_billing_portal",
 			"preview_summary_email",
 			"resume_campaign",
@@ -85,6 +86,8 @@ test("the dashboard counts the hourly limits of what costs something each call",
 			.map(({ name }) => name)
 			.sort(),
 		[
+			"bring_back_contacts",
+			"count_section_readers",
 			"count_segment",
 			"create_api_key",
 			"create_campaign",
@@ -98,8 +101,9 @@ test("the dashboard counts the hourly limits of what costs something each call",
 			"preview_campaign_cleanup",
 			"tag_contacts",
 			"untag_contacts",
+			"update_campaign_archive",
 		],
-		"drafts, segments, fields, tags, keys, deletes, exports, counts and summaries stay inside MailCheap"
+		"drafts, web pages, segments, fields, tags, keys, deletes, contacts brought back, exports, counts and summaries stay inside MailCheap"
 	);
 	const imports = m.registry.getAction("import_contacts");
 	assert.equal(imports.limitDashboard({}), true, "a file's first chunk counts");
