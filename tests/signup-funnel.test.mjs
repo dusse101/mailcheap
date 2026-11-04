@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import mongoose from "mongoose";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createConfirmToken } from "../lib/confirmation.js";
 import { activate, anonymous, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
@@ -312,6 +313,20 @@ describe("GET /api/signup-funnel", () => {
 		assert.deepEqual(response.body.byDay, []);
 		assert.deepEqual(response.body.totals, { signedUp: 6, confirmSent: 3, confirmOpened: 2, confirmed: 1 });
 		assert.equal(response.body.pendingTotal, 2);
+	});
+
+	test("opens the database itself on a cold instance, for days=N and days=all", async () => {
+		process.env.MAILCHEAP_FUNNEL_KEY = FUNNEL_KEY;
+		for (const days of ["1", "7", "all"]) {
+			// A fresh Vercel instance: nothing else on it has connected to MongoDB yet.
+			await mongoose.disconnect();
+			globalThis.__mailcheapMongoose.connection = null;
+			globalThis.__mailcheapMongoose.promise = null;
+			const response = await getFunnel(`?newsletter=funnel-notes&days=${days}&timeZone=America/Chicago`, FUNNEL_KEY);
+			assert.equal(response.status, 200, `days=${days}: ${JSON.stringify(response.body)}`);
+			assert.equal(response.body.range, days === "all" ? "all" : "days");
+			assert.ok(response.body.totals.signedUp >= 1, `days=${days}`);
+		}
 	});
 
 	test("days, limit and the time zone stay in bounds", async () => {
