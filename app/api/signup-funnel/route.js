@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { actionError, toActionError } from "@/lib/actions/errors";
 import { errorResponse } from "@/lib/api/rest";
+import { connectDb } from "@/lib/db";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import { getSignupFunnel, MAX_FUNNEL_DAYS, MAX_PENDING_LISTED } from "@/lib/signup-funnel";
 import { resolveTimeZone } from "@/lib/time-zone";
@@ -43,6 +44,8 @@ export async function GET(request) {
 	try {
 		const slug = params.get("newsletter")?.trim().toLowerCase();
 		if (!slug) throw actionError("validation_failed", "newsletter: send the newsletter's slug");
+		// A cold instance has no connection yet: without this, the first query buffers until Mongoose times out (500).
+		await connectDb();
 		// Slugs are unique across accounts, and the key is the server's own, not an account's.
 		const newsletter = await Newsletter.findOne({ slug }).select({ slug: 1, accountId: 1 }).setOptions({ crossAccount: true }).lean();
 		if (!newsletter) throw actionError("not_found", "Newsletter not found");
