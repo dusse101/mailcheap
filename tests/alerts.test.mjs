@@ -368,8 +368,9 @@ describe("what alerts", () => {
 			for (const authorization of [undefined, CRON_SECRET, `Bearer ${CRON_SECRET.slice(1)}`, `Bearer ${CRON_SECRET}x`, "Bearer someone-elses-secret-0123456789"]) {
 				assert.equal((await call(authorization)).status, 401, String(authorization));
 			}
-			const { summaries, domains, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
+			const { summaries, domains, confirmationReminders, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
 			assert.deepEqual(checks, { postshiba: { alerts: [] }, telegram: { skipped: "already announced" } });
+			assert.deepEqual(confirmationReminders, { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0 });
 			assert.equal(typeof summaries.queued, "number", "and the summary emails due this hour");
 			assert.equal(typeof domains.checked, "number", "and the verified domains due for their daily look at DNS");
 
