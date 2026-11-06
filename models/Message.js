@@ -62,7 +62,7 @@ messageSchema.index({ providerMessageId: 1 }, { sparse: true });
 // A contact's emails, newest first (lib/contact-emails.js), and the checks on its welcome and confirmation emails.
 messageSchema.index({ contactId: 1, _id: -1 });
 messageSchema.index({ kind: 1, createdAt: -1 });
-// One confirmation reminder per pending cycle, including when two hourly runs overlap.
+// One confirmation reminder per pending cycle, including when two runs overlap.
 messageSchema.index(
 	{ contactId: 1, cycleAt: 1 },
 	{ unique: true, partialFilterExpression: { kind: "confirmation-reminder" } }
