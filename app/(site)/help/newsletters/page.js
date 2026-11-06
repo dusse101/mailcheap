@@ -95,6 +95,10 @@ export default function NewslettersPage() {
 				inbox. So does someone who unsubscribed and signs up again on your website.
 			</p>
 			<p>
+				The confirmation email has an unsubscribe link like any other. Someone who uses it while they&apos;re pending becomes
+				unsubscribed, and the old confirmation button no longer adds them.
+			</p>
+			<p>
 				The built-in confirmation email follows your newsletter&apos;s name and description. On the{" "}
 				<LinkApp href="/newsletters/signups">Confirm signups page</LinkApp>, you can write your own subject, preview text and content,
 				as long as it keeps the button.
