@@ -4,7 +4,7 @@ import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, getCleanupDefaults } from "@/lib/cleanup";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
 import { CONFIRMATION_RESENDS } from "@/lib/confirmation";
-import { CONFIRMATION_REMINDER_AFTER_HOURS } from "@/lib/confirmation-reminder-rules";
+import { CONFIRMATION_REMINDER_AFTER_HOURS, CONFIRMATION_REMINDER_MAX_ATTEMPTS } from "@/lib/confirmation-reminder-rules";
 import { formatWindow } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { INBOX_CHECK_LIMIT } from "@/lib/inbox-check";
@@ -96,12 +96,21 @@ export default function NewslettersPage() {
 				inbox. So does someone who unsubscribed and signs up again on your website.
 			</p>
 			<p>
-				A server can also send one reminder, about {CONFIRMATION_REMINDER_AFTER_HOURS} hours after someone signs up, and then
-				stop. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
-				moment. People already waiting are left as they are. A confirmation email sent again restarts the wait, so the reminder
-				does not arrive next to it. Someone who confirmed, unsubscribed, bounced or complained gets none.
 				The confirmation email has an unsubscribe link like any other. Someone who uses it while they&apos;re pending becomes
 				unsubscribed, and the old confirmation button no longer adds them.
+			</p>
+			<p>
+				A server can also send one reminder, about {CONFIRMATION_REMINDER_AFTER_HOURS} hours after someone signs up, and then
+				stop. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
+				moment. A confirmation email sent again restarts the wait, so the reminder does not arrive next to it. Someone who
+				confirmed, unsubscribed, bounced or complained gets none, and neither does someone whose confirmation email never went
+				out. A reminder that keeps failing stops after {CONFIRMATION_REMINDER_MAX_ATTEMPTS} tries.
+			</p>
+			<p>
+				People already waiting when it&apos;s turned on get nothing unless that server also runs a one-time catch-up. The catch-up
+				only counts them until it&apos;s explicitly set to send, then reaches a fixed group, up to a set total and date, with the
+				same one reminder. Before MailCheap recorded unsubscribes from pending people, a click on that link left no trace, so a
+				catch-up can&apos;t leave those people out.
 			</p>
 			<p>
 				The built-in confirmation email follows your newsletter&apos;s name and description. On the{" "}

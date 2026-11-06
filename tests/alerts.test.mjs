@@ -370,7 +370,7 @@ describe("what alerts", () => {
 			}
 			const { summaries, domains, confirmationReminders, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
 			assert.deepEqual(checks, { postshiba: { alerts: [] }, telegram: { skipped: "already announced" } });
-			assert.deepEqual(confirmationReminders, { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0 });
+			assert.deepEqual(confirmationReminders, { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0, alreadySent: 0, noConfirmationSent: 0 });
 			assert.equal(typeof summaries.queued, "number", "and the summary emails due this hour");
 			assert.equal(typeof domains.checked, "number", "and the verified domains due for their daily look at DNS");
 

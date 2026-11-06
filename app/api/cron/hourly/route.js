@@ -10,7 +10,8 @@ export const maxDuration = 60;
 
 // Every hour: PostShiba's word on whether MailCheap can send, Telegram's first message once it's set up, the summary
 // emails due this hour in their owners' timezones, the daily look at verified sending domains' DNS records, and
-// confirmation reminders for newsletters that turned them on (lib/confirmation-reminder.js). Unset, that part sends nothing.
+// confirmation reminders for newsletters that turned them on (lib/confirmation-reminder.js). Unset, that part sends nothing,
+// and it reports its own errors and stops at its own time budget, so it can't take the others down.
 export const GET = withCronSecret(async () => {
 	const [postshiba, telegram, summaries, domains, confirmationReminders] = await Promise.all([
 		checkPostshibaStatus(),

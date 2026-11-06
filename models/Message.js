@@ -28,6 +28,8 @@ const messageSchema = new mongoose.Schema(
 		firstSend: { type: Boolean },
 		// Fork: the pending cycle (subscribedAt) a confirmation reminder belongs to. One reminder per cycle.
 		cycleAt: { type: Date },
+		// Fork: failed sends of a confirmation reminder. It stops after a few (lib/confirmation-reminder-rules.js).
+		attempts: { type: Number },
 		// A Gmail reader a new domain sends on a later day: not before then (lib/sending.js markSendAfter).
 		sendAfter: { type: Date },
 		// The email provider's id for it, when the send returns one; else the first event fills it in.
@@ -60,18 +62,6 @@ messageSchema.index({ providerMessageId: 1 }, { sparse: true });
 // A contact's emails, newest first (lib/contact-emails.js), and the checks on its welcome and confirmation emails.
 messageSchema.index({ contactId: 1, _id: -1 });
 messageSchema.index({ kind: 1, createdAt: -1 });
-// Tests set this to a contact id so a confirmation can land in the moment a send claims its message.
-// It only runs when NODE_ENV is test. See tests/confirmation-reminder-send.test.mjs.
-messageSchema.pre("updateOne", async function () {
-	if (process.env.NODE_ENV !== "test") return;
-	const contactId = globalThis.__mailcheapRaceContactId;
-	if (!contactId || this.getUpdate()?.$set?.status !== "sent") return;
-	globalThis.__mailcheapRaceContactId = null;
-	await mongoose
-		.model("Contact")
-		.updateOne({ _id: contactId, status: "pending" }, { $set: { status: "active", confirmedAt: new Date() } })
-		.setOptions({ crossAccount: true });
-});
 // One confirmation reminder per pending cycle, including when two hourly runs overlap.
 messageSchema.index(
 	{ contactId: 1, cycleAt: 1 },

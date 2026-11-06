@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { createUnsubscribeToken } from "../lib/unsubscribe.js";
 import { verifyConfirmToken } from "../lib/confirmation.js";
 import { CONFIRMATION_REMINDER_KIND } from "../lib/confirmation-reminder-rules.js";
 import { activate, as, callApi, catchRedirect, form, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
+import { published as qstashJobs } from "./stubs/qstash.mjs";
 import { state as sesState, sent as sesEmails } from "./stubs/ses.mjs";
 
 // The hourly job's one reminder. Signups still send the confirmation email themselves; this never sends the
@@ -30,6 +32,7 @@ function serial(name, fn) {
 	});
 }
 const HOUR = 60 * 60 * 1000;
+const IDLE = { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0, alreadySent: 0, noConfirmationSent: 0 };
 
 async function customer(email, { confirm = true } = {}) {
 	const user = await signIn(email);
@@ -95,6 +98,15 @@ function remindersTo(email, from = 0) {
 	return sesEmails.slice(from).filter((message) => message.to === email && message.subject.startsWith("Reminder:"));
 }
 
+function failing(error, times = 20) {
+	sesState.failNext = { name: "sendSesEmail", times, error };
+	return () => {
+		const left = sesState.failNext?.times ?? 0;
+		sesState.failNext = null;
+		return times - left;
+	};
+}
+
 function tokenOf(message) {
 	return message?.html?.match(/\/confirm\?token=([^"&]+)/)?.[1] ?? null;
 }
@@ -110,6 +122,10 @@ before(async () => {
 		Message: (await import("../models/Message.js")).default,
 		Newsletter: (await import("../models/Newsletter.js")).default,
 		Suppression: (await import("../models/Suppression.js")).default,
+		sending: await import("../lib/sending.js"),
+		events: await import("../lib/email-events.js"),
+		unsubscribeRoute: await import("../app/api/unsubscribe/route.js"),
+		cronRoute: await import("../app/api/cron/hourly/route.js"),
 	};
 });
 
@@ -210,12 +226,20 @@ serial("a confirm that lands as the reminder is claimed suppresses it", async ()
 	const contact = await addPending(user, "race@example.org");
 	await age(user, "race@example.org", { subscribedHours: 25 });
 	const before = sesEmails.length;
-	globalThis.__mailcheapRaceContactId = contact._id;
+	const updateOne = m.Message.updateOne;
+	m.Message.updateOne = function (filter, update, ...rest) {
+		if (update?.$set?.status !== "sent") return updateOne.call(this, filter, update, ...rest);
+		m.Message.updateOne = updateOne;
+		return m.Contact.updateOne(
+			{ accountId: user.accountId, _id: contact._id, status: "pending" },
+			{ $set: { status: "active", confirmedAt: new Date() } }
+		).then(() => updateOne.call(this, filter, update, ...rest));
+	};
 	try {
 		const result = await run(reminderEnv([user.slug]));
 		assert.equal(result.sent, 0, JSON.stringify(result));
 	} finally {
-		globalThis.__mailcheapRaceContactId = null;
+		m.Message.updateOne = updateOne;
 	}
 	assert.equal(remindersTo("race@example.org", before).length, 0);
 	const after = await m.Contact.findOne({ accountId: user.accountId, email: "race@example.org" }).lean();
@@ -251,6 +275,7 @@ serial("a failed reminder is tried again, and an expired link is not sent", asyn
 	);
 
 	const staleContact = await m.Contact.findOne({ accountId: user.accountId, email: "stale@example.org" }).lean();
+	// Unreachable for a new signup, but a backfill retried long after its first try could get here.
 	await m.Message.collection.updateOne(
 		{ accountId: user.accountId, contactId: staleContact._id, kind: CONFIRMATION_REMINDER_KIND },
 		{ $set: { createdAt: new Date(Date.now() - 31 * 24 * HOUR) } }
@@ -293,9 +318,9 @@ serial("nothing is sent when the setting is missing, invalid, or sending is off,
 	await age(user, "global@example.org", { subscribedHours: 25 });
 	await m.globalSuppressions.suppressGlobally({ emails: ["global@example.org"], reason: "bounce" });
 	const before = sesEmails.length;
-	assert.deepEqual(await run({}), { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0 });
-	assert.deepEqual(await run({ CONFIRMATION_REMINDERS: "{" }), { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0 });
-	assert.deepEqual(await run({ CONFIRMATION_REMINDERS: "{}" }), { enabled: 0, sent: 0, skipped: 0, failed: 0, deferred: 0 });
+	assert.deepEqual(await run({}), IDLE);
+	assert.deepEqual(await run({ CONFIRMATION_REMINDERS: "{" }), IDLE);
+	assert.deepEqual(await run({ CONFIRMATION_REMINDERS: "{}" }), IDLE);
 	const since = new Date(Date.now() - 30 * 24 * HOUR).toISOString();
 	const off = await run({ CONFIRMATION_REMINDERS: JSON.stringify({ [user.slug]: since }), SENDING_ENABLED: "false" });
 	assert.equal(off.inactive, "sending off");
@@ -306,4 +331,278 @@ serial("nothing is sent when the setting is missing, invalid, or sending is off,
 	assert.equal(remindersTo("global@example.org", before).length, 0);
 	assert.equal((await m.Contact.findOne({ accountId: user.accountId, email: "global@example.org" }).lean()).confirmationReminder.state, "skipped");
 	assert.equal(await m.Message.countDocuments({ accountId: user.accountId, email: "off@example.org", kind: "confirmation" }), 1);
+});
+
+serial("someone who unsubscribed while pending gets no reminder, whichever way they did it", async () => {
+	const user = await customer("remind-optout@example.com");
+	const page = await addPending(user, "out-page@example.org");
+	const oneClick = await addPending(user, "out-oneclick@example.org");
+	await addPending(user, "out-provider@example.org");
+	await addPending(user, "still-in@example.org");
+	const post = (contact, body) => {
+		const token = createUnsubscribeToken({ contactId: contact._id, newsletterId: user.newsletterId });
+		return m.unsubscribeRoute.POST(new Request(`http://localhost:3000/api/unsubscribe?token=${token}`, { method: "POST", ...(body && { body }) }));
+	};
+	assert.equal((await post(page, new URLSearchParams({ source: "page" }))).status, 303);
+	assert.equal((await post(oneClick)).status, 200);
+	const providerMessage = await m.Message.findOne({ accountId: user.accountId, email: "out-provider@example.org", kind: "confirmation" }).lean();
+	await m.events.handleEmailEvent({
+		type: "unsubscribe",
+		accountId: String(user.accountId),
+		messageId: String(providerMessage._id),
+		email: providerMessage.email,
+		emails: [providerMessage.email],
+	});
+	const opted = ["out-page@example.org", "out-oneclick@example.org", "out-provider@example.org"];
+	for (const email of [...opted, "still-in@example.org"]) await age(user, email, { subscribedHours: 25 });
+	const before = sesEmails.length;
+	const result = await run(reminderEnv([user.slug]));
+	assert.equal(result.sent, 1, "the one who stayed");
+	for (const email of opted) {
+		assert.equal(remindersTo(email, before).length, 0, email);
+		assert.equal((await m.Contact.findOne({ accountId: user.accountId, email }).lean()).status, "unsubscribed");
+	}
+	assert.equal(await m.Message.countDocuments({ accountId: user.accountId, email: { $in: opted }, kind: CONFIRMATION_REMINDER_KIND }), 0);
+});
+
+serial("a bounce or complaint on the confirmation stops the reminder", async () => {
+	const user = await customer("remind-events@example.com");
+	for (const [email, fields] of [
+		["hard@example.org", { type: "bounce", bounce: "hard", reason: "no such mailbox" }],
+		["spam@example.org", { type: "complaint" }],
+	]) {
+		await addPending(user, email);
+		const message = await m.Message.findOne({ accountId: user.accountId, email, kind: "confirmation" }).lean();
+		await m.events.handleEmailEvent({ accountId: String(user.accountId), messageId: String(message._id), email, emails: [email], ...fields });
+		await age(user, email, { subscribedHours: 25 });
+	}
+	const before = sesEmails.length;
+	const result = await run(reminderEnv([user.slug]));
+	assert.equal(result.sent, 0, JSON.stringify(result));
+	assert.equal(sesEmails.length, before);
+});
+
+serial("a reminder is never the first email: no confirmation that went out, no reminder", async () => {
+	const user = await customer("remind-never@example.com");
+	const make = (email, overrides = {}) =>
+		m.Contact.create({ accountId: user.accountId, newsletterId: user.newsletterId, email, status: "pending", subscribedAt: new Date(Date.now() - 25 * HOUR), ...overrides });
+	await make("no-message@example.org");
+	for (const [email, status] of [
+		["failed-one@example.org", "failed"],
+		["dropped-one@example.org", "suppressed"],
+		["capped-one@example.org", "skipped"],
+		["stale-queue@example.org", "queued"],
+	]) {
+		const contact = await make(email);
+		await m.Message.create({ kind: "confirmation", accountId: user.accountId, newsletterId: user.newsletterId, contactId: contact._id, email, status });
+		await m.Message.collection.updateMany({ contactId: contact._id }, { $set: { createdAt: new Date(Date.now() - 25 * HOUR) } });
+	}
+	const young = await make("young-queue@example.org");
+	await m.Message.create({ kind: "confirmation", accountId: user.accountId, newsletterId: user.newsletterId, contactId: young._id, email: "young-queue@example.org", status: "queued" });
+	const before = sesEmails.length;
+	const result = await run(reminderEnv([user.slug]));
+	assert.equal(result.sent, 0, JSON.stringify(result));
+	assert.equal(result.noConfirmationSent, 5, "the young queued one is only waiting");
+	assert.equal(sesEmails.length, before);
+	assert.equal(await m.Message.countDocuments({ accountId: user.accountId, kind: CONFIRMATION_REMINDER_KIND }), 0);
+	assert.equal(await m.Contact.countDocuments({ accountId: user.accountId, confirmationReminder: { $exists: true } }), 0, "nothing was claimed");
+});
+
+serial("the first throttle stops the run, and the reminder goes out on a later one", async () => {
+	const user = await customer("remind-throttle@example.com");
+	const emails = ["t1@example.org", "t2@example.org", "t3@example.org"];
+	for (const email of emails) {
+		await addPending(user, email);
+		await age(user, email, { subscribedHours: 25 });
+	}
+	const before = sesEmails.length;
+	const jobs = qstashJobs.length;
+	const tried = failing(Object.assign(new Error("slow down"), { name: "ThrottlingException" }));
+	let result;
+	try {
+		result = await run(reminderEnv([user.slug]));
+	} finally {
+		assert.equal(tried(), 1, "one provider call, not one per contact");
+	}
+	assert.deepEqual([result.sent, result.failed, result.deferred, result.stopped], [0, 0, 1, "throttled"], JSON.stringify(result));
+	assert.equal(qstashJobs.length, jobs + 1, "one retry job, not one per contact");
+	const queued = await m.Message.findOne({ accountId: user.accountId, kind: CONFIRMATION_REMINDER_KIND }).lean();
+	assert.equal(queued.status, "queued");
+	assert.equal(queued.attempts, undefined, "a throttle is not a failed send");
+
+	const later = await run(reminderEnv([user.slug]), new Date(Date.now() + 16 * 60 * 1000));
+	assert.equal(later.sent, 3, JSON.stringify(later));
+	for (const email of emails) assert.equal(remindersTo(email, before).length, 1, email);
+});
+
+serial("three failures in a row stop the run", async () => {
+	const user = await customer("remind-outage@example.com");
+	for (const index of [1, 2, 3, 4, 5]) {
+		await addPending(user, `o${index}@example.org`);
+		await age(user, `o${index}@example.org`, { subscribedHours: 25 });
+	}
+	const tried = failing(Object.assign(new Error("mailbox down"), { name: "InternalFailure" }));
+	let result;
+	try {
+		result = await run(reminderEnv([user.slug]));
+	} finally {
+		assert.equal(tried(), 3);
+	}
+	assert.deepEqual([result.sent, result.failed, result.stopped], [0, 3, "failures"], JSON.stringify(result));
+	assert.equal(await m.Message.countDocuments({ accountId: user.accountId, kind: CONFIRMATION_REMINDER_KIND }), 3);
+});
+
+serial("a reminder that keeps failing is skipped after three tries", async () => {
+	const user = await customer("remind-cap@example.com");
+	await addPending(user, "cap@example.org");
+	await age(user, "cap@example.org", { subscribedHours: 25 });
+	const contactOf = () => m.Contact.findOne({ accountId: user.accountId, email: "cap@example.org" }).lean();
+	const messageOf = async () => m.Message.findOne({ accountId: user.accountId, email: "cap@example.org", kind: CONFIRMATION_REMINDER_KIND }).lean();
+	const error = Object.assign(new Error("mailbox down"), { name: "InternalFailure" });
+	for (const attempt of [1, 2, 3]) {
+		const tried = failing(error);
+		const result = await run(reminderEnv([user.slug]));
+		assert.equal(tried(), 1, `try ${attempt}`);
+		assert.equal(result.failed, 1, JSON.stringify(result));
+		assert.equal((await messageOf()).attempts, attempt);
+	}
+	const given = await messageOf();
+	assert.equal(given.status, "skipped");
+	assert.match(given.error, /Gave up after 3/);
+	assert.equal((await contactOf()).confirmationReminder.state, "skipped");
+	const before = sesEmails.length;
+	const after = await run(reminderEnv([user.slug]));
+	assert.deepEqual([after.sent, after.failed], [0, 0], "and that's the end of it, even with the provider back");
+	assert.equal(sesEmails.length, before);
+});
+
+serial("a reminder already sent is counted as that, not as a new send", async () => {
+	const user = await customer("remind-honest@example.com");
+	await addPending(user, "honest@example.org");
+	await age(user, "honest@example.org", { subscribedHours: 25 });
+	assert.equal((await run(reminderEnv([user.slug]))).sent, 1);
+	const contact = await m.Contact.findOne({ accountId: user.accountId, email: "honest@example.org" }).lean();
+	await m.Contact.collection.updateOne({ _id: contact._id }, { $set: { "confirmationReminder.state": "retry" } });
+	const before = sesEmails.length;
+	const again = await run(reminderEnv([user.slug]));
+	assert.deepEqual([again.sent, again.alreadySent], [0, 1], JSON.stringify(again));
+	assert.equal(sesEmails.length, before);
+});
+
+// The check after the claim reads Contact.exists({ status: "pending" }) and nothing else on this path does.
+function breakPendingCheck() {
+	const exists = m.Contact.exists;
+	let thrown = 0;
+	m.Contact.exists = function (filter, ...rest) {
+		if (filter?.status === "pending" && filter?._id && !thrown) {
+			thrown++;
+			m.Contact.exists = exists;
+			return Promise.reject(Object.assign(new Error("connection reset"), { name: "MongoNetworkError" }));
+		}
+		return exists.call(this, filter, ...rest);
+	};
+	return () => {
+		m.Contact.exists = exists;
+		return thrown;
+	};
+}
+
+serial("a database error in the check before sending puts a confirmation back in the queue", async () => {
+	const user = await customer("remind-check-confirm@example.com");
+	const before = sesEmails.length;
+	const jobs = qstashJobs.length;
+	const restore = breakPendingCheck();
+	try {
+		const response = await signUp(user, "check-confirm@example.org");
+		assert.equal(response.status, 201, JSON.stringify(response.body));
+		await flushAfter();
+	} finally {
+		assert.equal(restore(), 1, "the check ran and failed");
+	}
+	const queued = await m.Message.findOne({ accountId: user.accountId, email: "check-confirm@example.org", kind: "confirmation" }).lean();
+	assert.equal(queued.status, "queued", "not lost as sent");
+	assert.equal(queued.sentAt, undefined);
+	assert.equal(sesEmails.length, before);
+	assert.equal(qstashJobs.length, jobs + 1, "and QStash brings it back");
+
+	const retried = await m.sending.sendMessageBatch({ accountId: String(user.accountId), messageIds: [String(queued._id)] });
+	assert.equal(retried.sent, 1);
+	assert.equal(sesEmails.slice(before).filter((message) => message.to === "check-confirm@example.org").length, 1);
+});
+
+serial("a database error in the check before sending keeps a reminder, and it goes out on a later run", async () => {
+	const user = await customer("remind-check-reminder@example.com");
+	await addPending(user, "check-reminder@example.org");
+	await age(user, "check-reminder@example.org", { subscribedHours: 25 });
+	const before = sesEmails.length;
+	const restore = breakPendingCheck();
+	let result;
+	try {
+		result = await run(reminderEnv([user.slug]));
+	} finally {
+		assert.equal(restore(), 1);
+	}
+	assert.deepEqual([result.sent, result.deferred, result.stopped], [0, 1, "throttled"], JSON.stringify(result));
+	const queued = await m.Message.findOne({ accountId: user.accountId, kind: CONFIRMATION_REMINDER_KIND }).lean();
+	assert.equal(queued.status, "queued");
+	assert.equal(queued.sentAt, undefined);
+	assert.equal(remindersTo("check-reminder@example.org", before).length, 0);
+
+	const later = await run(reminderEnv([user.slug]), new Date(Date.now() + 16 * 60 * 1000));
+	assert.equal(later.sent, 1, JSON.stringify(later));
+	assert.equal(remindersTo("check-reminder@example.org", before).length, 1);
+	assert.equal(await m.Message.countDocuments({ accountId: user.accountId, kind: CONFIRMATION_REMINDER_KIND }), 1);
+});
+
+serial("out of time, a run stops before sending and the next one picks it up", async () => {
+	const user = await customer("remind-budget@example.com");
+	await addPending(user, "budget@example.org");
+	await age(user, "budget@example.org", { subscribedHours: 25 });
+	const before = sesEmails.length;
+	const env = { ...process.env, ...reminderEnv([user.slug]) };
+	const result = await m.reminders.queueConfirmationReminders({ env, budgetMs: 0 });
+	assert.equal(result.sent, 0);
+	assert.equal(result.stopped, "time budget");
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	assert.equal(remindersTo("budget@example.org", before).length, 0, "the work left behind stops too");
+	assert.equal((await run(reminderEnv([user.slug]))).sent, 1);
+});
+
+serial("a reminder error doesn't take the hourly cron down", async () => {
+	const user = await customer("remind-isolated@example.com");
+	const find = m.Newsletter.find;
+	m.Newsletter.find = () => {
+		throw Object.assign(new Error("database gone"), { name: "MongoServerError" });
+	};
+	try {
+		const direct = await run(reminderEnv([user.slug]));
+		assert.equal(direct.error, "MongoServerError");
+		const CRON_SECRET = "test-cron-secret-0123456789abcdef";
+		const response = await withEnv({ CRON_SECRET, ...reminderEnv([user.slug]) }, () =>
+			m.cronRoute.GET(new Request("http://localhost:3000/api/cron/hourly", { headers: { authorization: `Bearer ${CRON_SECRET}` } }))
+		);
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.equal(body.confirmationReminders.error, "MongoServerError");
+		assert.equal(typeof body.domains.checked, "number", "the DNS check still reported");
+		assert.equal(typeof body.summaries.queued, "number", "and the summaries");
+	} finally {
+		m.Newsletter.find = find;
+	}
+});
+
+serial("the brand's reminder goes out with its copy", async () => {
+	const user = await customer("remind-brand@example.com");
+	await addPending(user, "branded@example.org");
+	await age(user, "branded@example.org", { subscribedHours: 25 });
+	const before = sesEmails.length;
+	const result = await withEnv({ EMAIL_BRAND: "tacoandtell" }, () => run(reminderEnv([user.slug])));
+	assert.equal(result.sent, 1, JSON.stringify(result));
+	const [email] = sesEmails.slice(before);
+	assert.equal(email.subject, "Your Taco & Tell signup is still on the porch");
+	assert.match(email.text, /So close\./);
+	assert.match(email.text, /red light on 380/);
+	assert.match(email.text, /this is the last nudge you'll get from us/);
+	assert.match(email.html, /You&#39;re not on the list until you confirm\. This is the only reminder\.|You're not on the list until you confirm\. This is the only reminder\./);
+	assert.ok(verifyConfirmToken(tokenOf(email)));
 });
