@@ -4,7 +4,11 @@ import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, getCleanupDefaults } from "@/lib/cleanup";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
 import { CONFIRMATION_RESENDS } from "@/lib/confirmation";
-import { CONFIRMATION_REMINDER_AFTER_HOURS, CONFIRMATION_REMINDER_MAX_ATTEMPTS } from "@/lib/confirmation-reminder-rules";
+import {
+	CONFIRMATION_REMINDER_AFTER_HOURS,
+	CONFIRMATION_REMINDER_GRACE_HOURS,
+	CONFIRMATION_REMINDER_MAX_ATTEMPTS,
+} from "@/lib/confirmation-reminder-rules";
 import { formatWindow } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { INBOX_CHECK_LIMIT } from "@/lib/inbox-check";
@@ -100,11 +104,12 @@ export default function NewslettersPage() {
 				unsubscribed, and the old confirmation button no longer adds them.
 			</p>
 			<p>
-				A server can also send one reminder, about {CONFIRMATION_REMINDER_AFTER_HOURS} hours after someone signs up, and then
-				stop. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
+				A server can also send one reminder and then stop. It checks once a day, so the reminder goes out at the first check at
+				least {CONFIRMATION_REMINDER_AFTER_HOURS} hours after someone signs up, usually within two days. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
 				moment. A confirmation email sent again restarts the wait, so the reminder does not arrive next to it. Someone who
 				confirmed, unsubscribed, bounced or complained gets none, and neither does someone whose confirmation email never went
-				out. A reminder that keeps failing stops after {CONFIRMATION_REMINDER_MAX_ATTEMPTS} tries.
+				out. A reminder that keeps failing stops after {CONFIRMATION_REMINDER_MAX_ATTEMPTS} tries, or once{" "}
+				{CONFIRMATION_REMINDER_AFTER_HOURS + CONFIRMATION_REMINDER_GRACE_HOURS} hours have passed, whichever comes first.
 			</p>
 			<p>
 				People already waiting when it&apos;s turned on get nothing unless that server also runs a one-time catch-up. The catch-up

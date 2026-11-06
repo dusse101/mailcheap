@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { CONFIRM_LINK_MAX_AGE_MS, getConfirmUrl, verifyConfirmToken } from "../lib/confirmation.js";
 import { CONFIRM_URL_PLACEHOLDER, getConfirmationContent } from "../lib/confirmation-content.js";
@@ -215,4 +216,55 @@ test("who the backfill can reach", () => {
 		[1, 3.9, 4, 7, 8, 14, 15, 30, 31].map((days) => backfillAgeBucket(daysAgo(days), RULE_NOW)),
 		["1-3d", "1-3d", "4-7d", "4-7d", "8-14d", "8-14d", "15-30d", "15-30d", "31d+"]
 	);
+});
+
+test("vercel.json runs only the isolated reminder route, daily at 6:00 in Chicago", () => {
+	const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+	assert.equal(config.crons, undefined, "a crons entry would run in UTC, and run the route a second time");
+	assert.deepEqual(config.schedules, {
+		"confirmation-reminders": {
+			schedule: "0 6 * * *",
+			timezone: "America/Chicago",
+			path: "/api/cron/confirmation-reminders",
+			// Schedules default to POST, and withCronSecret only exports GET.
+			requestMethod: "GET",
+		},
+	});
+	assert.ok(existsSync(new URL("../app/api/cron/confirmation-reminders/route.js", import.meta.url)));
+});
+
+test("the daily route's only imports are the reminder and the secret check", () => {
+	const source = readFileSync(new URL("../app/api/cron/confirmation-reminders/route.js", import.meta.url), "utf8");
+	assert.deepEqual([...source.matchAll(/from "([^"]+)"/g)].map(([, from]) => from).sort(), ["@/lib/confirmation-reminder", "@/lib/cron"]);
+});
+
+test("a run at about 6:00 in Chicago always falls inside the reminder window, across daylight saving", () => {
+	const HOUR_MS = 60 * 60 * 1000;
+	const chicagoHour = (at) =>
+		new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(at);
+	// 6:00 in Chicago is 11:00 UTC in summer and 12:00 UTC in winter. Each run starts as late or as early as the 15 minute jitter allows.
+	const runs = [];
+	for (let day = 0; day < 400; day++) {
+		const midnight = Date.UTC(2026, 0, 1 + day);
+		const start = [11, 12].map((hour) => midnight + hour * HOUR_MS).find((at) => chicagoHour(at) === "6");
+		runs.push(start + (day % 2 ? 15 * 60 * 1000 : 0));
+	}
+	const fewest = (start) => runs.filter((at) => at >= start && at < start + CONFIRMATION_REMINDER_GRACE_MS).length;
+	let least = Infinity;
+	const end = runs.at(-1) - CONFIRMATION_REMINDER_AFTER_MS - CONFIRMATION_REMINDER_GRACE_MS;
+	for (let signup = runs[0]; signup < end; signup += 11 * 60 * 1000) {
+		const count = fewest(signup + CONFIRMATION_REMINDER_AFTER_MS);
+		least = Math.min(least, count);
+		const firstRun = runs.find((at) => at >= signup + CONFIRMATION_REMINDER_AFTER_MS);
+		const window = getReminderWindow({
+			status: "pending",
+			subscribedAt: new Date(signup),
+			since: new Date(runs[0]),
+			now: new Date(firstRun),
+			latestConfirmationAt: new Date(signup),
+		});
+		assert.equal(window.open, true);
+		assert.ok(firstRun - signup < 50 * HOUR_MS, "the first chance comes within about two days");
+	}
+	assert.ok(least >= 1, "no signup's window closes between two runs");
 });

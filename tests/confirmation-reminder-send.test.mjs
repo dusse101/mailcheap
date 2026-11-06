@@ -8,7 +8,7 @@ import { flushAfter } from "./stubs/next-server.mjs";
 import { published as qstashJobs } from "./stubs/qstash.mjs";
 import { state as sesState, sent as sesEmails } from "./stubs/ses.mjs";
 
-// The hourly job's one reminder. Signups still send the confirmation email themselves; this never sends the
+// The daily route's one reminder. Signups still send the confirmation email themselves; this never sends the
 // list-cleanup last-chance email, and it sends nothing until CONFIRMATION_REMINDERS names the newsletter.
 let app;
 let m;
@@ -125,7 +125,9 @@ before(async () => {
 		sending: await import("../lib/sending.js"),
 		events: await import("../lib/email-events.js"),
 		unsubscribeRoute: await import("../app/api/unsubscribe/route.js"),
-		cronRoute: await import("../app/api/cron/hourly/route.js"),
+		reminderRoute: await import("../app/api/cron/confirmation-reminders/route.js"),
+		hourlyRoute: await import("../app/api/cron/hourly/route.js"),
+		Domain: (await import("../models/Domain.js")).default,
 	};
 });
 
@@ -568,7 +570,64 @@ serial("out of time, a run stops before sending and the next one picks it up", a
 	assert.equal((await run(reminderEnv([user.slug]))).sent, 1);
 });
 
-serial("a reminder error doesn't take the hourly cron down", async () => {
+const CRON_SECRET = "test-cron-secret-0123456789abcdef";
+const cronRequest = (path, authorization = `Bearer ${CRON_SECRET}`) =>
+	new Request(`http://localhost:3000${path}`, { headers: authorization ? { authorization } : {} });
+const REMINDER_PATH = "/api/cron/confirmation-reminders";
+
+// withEnv would set the text "undefined": these have to be really unset.
+async function withoutEnv(names, run) {
+	const previous = names.map((name) => [name, process.env[name]]);
+	for (const name of names) delete process.env[name];
+	try {
+		return await run();
+	} finally {
+		for (const [name, value] of previous) if (value !== undefined) process.env[name] = value;
+	}
+}
+
+serial("the daily route takes CRON_SECRET only: 503 without one set, 401 without it", async () => {
+	const unset = await withoutEnv(["CRON_SECRET"], () => m.reminderRoute.GET(cronRequest(REMINDER_PATH)));
+	assert.equal(unset.status, 503);
+	await withEnv({ CRON_SECRET }, async () => {
+		assert.equal((await m.reminderRoute.GET(cronRequest(REMINDER_PATH, null))).status, 401);
+		assert.equal((await m.reminderRoute.GET(cronRequest(REMINDER_PATH, "Bearer not-the-secret"))).status, 401);
+		assert.equal((await m.reminderRoute.GET(cronRequest(REMINDER_PATH))).status, 200);
+	});
+});
+
+serial("the daily route sends nothing with CONFIRMATION_REMINDERS unset, even for a contact who is due", async () => {
+	const user = await customer("remind-route-unset@example.com");
+	await addPending(user, "route-unset@example.org");
+	await age(user, "route-unset@example.org", { subscribedHours: 25 });
+	const before = sesEmails.length;
+	const queued = qstashJobs.length;
+	const response = await withoutEnv(["CONFIRMATION_REMINDERS", "CONFIRMATION_REMINDER_BACKFILL"], () =>
+		withEnv({ CRON_SECRET }, () => m.reminderRoute.GET(cronRequest(REMINDER_PATH)))
+	);
+	assert.equal(response.status, 200);
+	assert.deepEqual(await response.json(), { confirmationReminders: IDLE });
+	assert.equal(sesEmails.length, before);
+	assert.equal(qstashJobs.length, queued);
+	const contact = await m.Contact.findOne({ accountId: user.accountId, email: "route-unset@example.org" }).lean();
+	assert.equal(contact.confirmationReminder, undefined);
+});
+
+serial("the daily route sends a due reminder once when it's on, and the next day's run doesn't repeat it", async () => {
+	const user = await customer("remind-route-on@example.com");
+	await addPending(user, "route-on@example.org");
+	await age(user, "route-on@example.org", { subscribedHours: 25 });
+	const before = sesEmails.length;
+	await withEnv({ CRON_SECRET, ...reminderEnv([user.slug]) }, async () => {
+		const first = await (await m.reminderRoute.GET(cronRequest(REMINDER_PATH))).json();
+		assert.equal(first.confirmationReminders.sent, 1, JSON.stringify(first));
+		const second = await (await m.reminderRoute.GET(cronRequest(REMINDER_PATH))).json();
+		assert.equal(second.confirmationReminders.sent, 0, JSON.stringify(second));
+	});
+	assert.equal(remindersTo("route-on@example.org", before).length, 1);
+});
+
+serial("a reminder error is reported, not thrown, by the daily route", async () => {
 	const user = await customer("remind-isolated@example.com");
 	const find = m.Newsletter.find;
 	m.Newsletter.find = () => {
@@ -577,17 +636,41 @@ serial("a reminder error doesn't take the hourly cron down", async () => {
 	try {
 		const direct = await run(reminderEnv([user.slug]));
 		assert.equal(direct.error, "MongoServerError");
-		const CRON_SECRET = "test-cron-secret-0123456789abcdef";
-		const response = await withEnv({ CRON_SECRET, ...reminderEnv([user.slug]) }, () =>
-			m.cronRoute.GET(new Request("http://localhost:3000/api/cron/hourly", { headers: { authorization: `Bearer ${CRON_SECRET}` } }))
-		);
+		const response = await withEnv({ CRON_SECRET, ...reminderEnv([user.slug]) }, () => m.reminderRoute.GET(cronRequest(REMINDER_PATH)));
 		assert.equal(response.status, 200);
-		const body = await response.json();
-		assert.equal(body.confirmationReminders.error, "MongoServerError");
-		assert.equal(typeof body.domains.checked, "number", "the DNS check still reported");
-		assert.equal(typeof body.summaries.queued, "number", "and the summaries");
+		assert.equal((await response.json()).confirmationReminders.error, "MongoServerError");
 	} finally {
 		m.Newsletter.find = find;
+	}
+});
+
+serial("the daily route leaves the hourly cron's work alone, and the hourly cron leaves the reminders alone", async () => {
+	const user = await customer("remind-route-apart@example.com");
+	await addPending(user, "route-apart@example.org");
+	await age(user, "route-apart@example.org", { subscribedHours: 25 });
+	const { insertedId } = await m.Domain.collection.insertOne({
+		accountId: user.accountId,
+		domain: "route-apart.example.com",
+		verified: true,
+		provider: "ses",
+	});
+	const checkedAt = async () => (await m.Domain.collection.findOne({ _id: insertedId })).dns?.checkedAt;
+	const before = sesEmails.length;
+	try {
+		await withEnv({ CRON_SECRET, ...reminderEnv([user.slug]) }, async () => {
+			const hourly = await (await m.hourlyRoute.GET(cronRequest("/api/cron/hourly"))).json();
+			assert.equal("confirmationReminders" in hourly, false);
+			assert.equal(remindersTo("route-apart@example.org", before).length, 0, "the hourly cron sends no reminders");
+			assert.ok(await checkedAt(), "the hourly cron does check a due domain");
+
+			await m.Domain.collection.updateOne({ _id: insertedId }, { $unset: { dns: "" } });
+			const daily = await (await m.reminderRoute.GET(cronRequest(REMINDER_PATH))).json();
+			assert.deepEqual(Object.keys(daily), ["confirmationReminders"]);
+			assert.equal(daily.confirmationReminders.sent, 1, JSON.stringify(daily));
+			assert.equal(await checkedAt(), undefined, "the daily route doesn't check domains");
+		});
+	} finally {
+		await m.Domain.collection.deleteOne({ _id: insertedId });
 	}
 });
 
