@@ -57,5 +57,7 @@ const contactImportSchema = new mongoose.Schema(
 contactImportSchema.plugin(accountScoped);
 contactImportSchema.index({ accountId: 1, createdAt: -1 });
 contactImportSchema.index({ accountId: 1, newsletterId: 1, createdAt: -1 });
+// The hourly look for imports nobody looked at (lib/import-jobs.js mendStalledImports).
+contactImportSchema.index({ updatedAt: 1 }, { partialFilterExpression: { status: "processing" } });
 
 export default mongoose.models.ContactImport || mongoose.model("ContactImport", contactImportSchema);

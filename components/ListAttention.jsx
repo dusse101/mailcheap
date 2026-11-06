@@ -2,10 +2,12 @@ import ListAttentionItems from "@/components/ListAttentionItems";
 import { describeBlocker } from "@/lib/account-state";
 import { ALERT_OCCURRENCES_KEPT } from "@/lib/alert-rules";
 
-// What may need a look (lib/admin-stats.js listAttention): blocked accounts, customers' paused campaigns, then the alerts
-// of the last 7 days, each newest first. Each opens its details, and can be dismissed until it happens again.
+// What may need a look (lib/admin-stats.js listAttention): customers the email provider stops from sending and blocked
+// accounts, in red when they have a plan, then customers' paused campaigns and the alerts of the last 7 days, each
+// newest first. Each opens its details, and can be dismissed until it happens again.
 export default function ListAttention({ attention, now }) {
 	const items = [
+		...attention.blockedSends.map(describeBlockedSend),
 		...attention.blockedAccounts.map(describeBlocked),
 		...attention.pausedCampaigns.map(describePaused),
 		...attention.alerts.map(describeAlert),
@@ -18,14 +20,27 @@ export default function ListAttention({ attention, now }) {
 	return <ListAttentionItems items={items} dismissed={dismissed} now={now} />;
 }
 
+function describeBlockedSend(alert) {
+	return {
+		kind: "alert",
+		id: alert.id,
+		icon: "cantSend",
+		title: alert.title,
+		detail: [alert.ownerEmail, alert.detail].filter(Boolean).join(" · "),
+		at: alert.at,
+		isUrgent: true,
+	};
+}
+
 function describeBlocked(account) {
 	return {
 		kind: "account",
 		id: account.id,
 		icon: "blocked",
 		title: account.ownerEmail ?? "Unknown owner",
-		detail: `Blocked by ${describeBlocker(account.by)}${account.reason ? `: ${account.reason}` : ""}`,
+		detail: `${account.plan ? `${account.plan} plan · ` : ""}Blocked by ${describeBlocker(account.by)}${account.reason ? `: ${account.reason}` : ""}`,
 		at: account.at,
+		isUrgent: Boolean(account.hasPlan),
 	};
 }
 

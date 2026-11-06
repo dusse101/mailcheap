@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, ChevronDown, X } from "lucide-react";
 import { DotStatus, statusLabel } from "@/components/BadgeStatus";
 import InputDate from "@/components/InputDate";
 import InputSearch from "@/components/InputSearch";
@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
 	DropdownMenuRadioGroup,
 	DropdownMenuRadioItem,
 	DropdownMenuSeparator,
@@ -22,18 +24,19 @@ import {
 	describeSignupDays,
 	fromSignupDays,
 	getSourceLabel,
-	readDayKey,
 	toSignupDays,
 } from "@/lib/contact-filters";
 import { formatCount, formatNumber } from "@/lib/format";
+import { getHelpHref } from "@/lib/help";
+import { readDateKey } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 
 const ALL = "__all";
 const NO_FILTERS = Object.fromEntries(FILTER_PARAMS.map((key) => [key, null]));
 
-// The search by address and the filters, kept in the page's address: a status, a tag, the signup date and where
-// contacts came from. statuses: [{ value, count }] for the same search and filters, total: all of them. tags and
-// sources: [{ name, contacts }], most first. count: the contacts the list shows.
+// The search by address and the filters, kept in the page's address: a status, the signup date, where contacts came
+// from and a tag. statuses: [{ value, count }] for the same search and filters, total: all of them. tags and sources:
+// [{ name, contacts }], most first. count: the contacts the list shows.
 export default function FilterContacts({ statuses = [], total = 0, tags = [], sources = [], count }) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -45,8 +48,8 @@ export default function FilterContacts({ statuses = [], total = 0, tags = [], so
 	const tag = searchParams.get("tag") ?? "";
 	const source = searchParams.get("source") ?? "";
 	const signupDays = {
-		signedUpSince: readDayKey(searchParams.get("signedUpSince")),
-		signedUpBefore: readDayKey(searchParams.get("signedUpBefore")),
+		signedUpSince: readDateKey(searchParams.get("signedUpSince")),
+		signedUpBefore: readDateKey(searchParams.get("signedUpBefore")),
 	};
 	const signupLabel = describeSignupDays(signupDays);
 	const hasFilters = Boolean(status || tag || source || signupLabel);
@@ -104,14 +107,6 @@ export default function FilterContacts({ statuses = [], total = 0, tags = [], so
 					)}
 				</ChipFilter>
 
-				{(tags.length > 0 || tag) && (
-					<ChipFilter label="Tag" value={tag} onClear={() => navigate({ tag: null })}>
-						{(trigger) => (
-							<MenuOptions trigger={trigger} value={tag} allLabel="All tags" options={tags} onChange={(value) => navigate({ tag: value })} />
-						)}
-					</ChipFilter>
-				)}
-
 				<ChipFilter label="Signed up" value={signupLabel} onClear={() => navigate({ signedUpSince: null, signedUpBefore: null })}>
 					{(trigger) => <PopoverSignup trigger={trigger} days={signupDays} onChange={navigate} />}
 				</ChipFilter>
@@ -125,7 +120,25 @@ export default function FilterContacts({ statuses = [], total = 0, tags = [], so
 								allLabel="All sources"
 								options={sources}
 								getLabel={getSourceLabel}
+								hint="How each contact joined your list."
+								help={{ label: "How sources work", href: getHelpHref("contacts", "sources") }}
 								onChange={(value) => navigate({ source: value })}
+							/>
+						)}
+					</ChipFilter>
+				)}
+
+				{(tags.length > 0 || tag) && (
+					<ChipFilter label="Tag" value={tag} onClear={() => navigate({ tag: null })}>
+						{(trigger) => (
+							<MenuOptions
+								trigger={trigger}
+								value={tag}
+								allLabel="All tags"
+								options={tags}
+								hint="Labels you add in a contact's ⋯ menu."
+								help={{ label: "How tags work", href: getHelpHref("contacts", "tags") }}
+								onChange={(value) => navigate({ tag: value })}
 							/>
 						)}
 					</ChipFilter>
@@ -199,13 +212,21 @@ function ItemCount({ value, count, children }) {
 }
 
 // One of a list of names with their counts, like tags or sources. The value picked stays listed when no contact has it.
-function MenuOptions({ trigger, value, allLabel, options, getLabel = (name) => name, onChange }) {
+// Under the list, which scrolls on its own so they stay in sight, hint says what they are and help links to more.
+function MenuOptions({ trigger, value, allLabel, options, getLabel = (name) => name, hint, help, onChange }) {
 	const items = value && !options.some(({ name }) => name === value) ? [{ name: value, contacts: 0 }, ...options] : options;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-			<DropdownMenuContent align="start" className="max-h-80 w-60">
-				<DropdownMenuRadioGroup value={value || ALL} onValueChange={(next) => onChange(next === ALL ? null : next)}>
+			<DropdownMenuContent
+				align="start"
+				className="flex max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-64 flex-col overflow-hidden"
+			>
+				<DropdownMenuRadioGroup
+					value={value || ALL}
+					onValueChange={(next) => onChange(next === ALL ? null : next)}
+					className="-mx-1 min-h-0 overflow-y-auto px-1"
+				>
 					<DropdownMenuRadioItem value={ALL}>{allLabel}</DropdownMenuRadioItem>
 					<DropdownMenuSeparator />
 					{items.map(({ name, contacts }) => (
@@ -214,6 +235,15 @@ function MenuOptions({ trigger, value, allLabel, options, getLabel = (name) => n
 						</ItemCount>
 					))}
 				</DropdownMenuRadioGroup>
+				<DropdownMenuSeparator />
+				<DropdownMenuLabel className="font-normal text-pretty">{hint}</DropdownMenuLabel>
+				<DropdownMenuItem asChild>
+					<a href={help.href} target="_blank" rel="noopener">
+						<BookOpen />
+						{help.label}
+						<ArrowUpRight className="ml-auto text-muted-foreground" />
+					</a>
+				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderIssueBody } from "../lib/archive-content.js";
-import { cleanBlockHtml, cleanRichHtml, removeUnsafeElements } from "../lib/clean-html.js";
+import { cleanBlockHtml, cleanRichHtml, hasSectionRules, removeUnsafeElements } from "../lib/clean-html.js";
 import { findContentWarnings } from "../lib/content-warnings.js";
 import { highlightHtml } from "../lib/highlight-html.js";
 import { markdownToHtml } from "../lib/markdown.js";
 import { findButtonProblem, hasContent, htmlToText, renderEmail } from "../lib/render-email.js";
+import { SECTION_ATTRIBUTE_PATTERN, forReader, hasSectionsInBlocks, listSections } from "../lib/sections.js";
 import { firstImageUrl } from "../lib/thumbnail.js";
 
 // Bodies as large as the API and the editor accept. Before, the first two took 6 s at 192 KB and 12 s
@@ -63,6 +64,10 @@ const SHAPES = {
 	"unclosed <title>": repeat("<title>"),
 	"unclosed <head ": repeat("<head "),
 	"unclosed email-only parts": repeat("<a data-email-only>"),
+	"unclosed sections": repeat("<section "),
+	"nested sections": repeat('<section data-show="tag:vip">'),
+	"section ends": repeat("</section>"),
+	"an HTML block of unclosed sections": `<div data-html-block="">${repeat("&lt;section ")}&gt;</div>`,
 	"tag soup 1": tagSoup(1),
 	"tag soup 2": tagSoup(2),
 	"tag soup 3": tagSoup(3),
@@ -125,6 +130,11 @@ for (const [label, html] of Object.entries(SHAPES)) {
 			() => removeUnsafeElements(html),
 			() => findContentWarnings(html),
 			() => findContentWarnings(html, { isDesigned: true }),
+			() => forReader(html, { tags: ["vip"], segments: {} }),
+			() => listSections(html),
+			() => SECTION_ATTRIBUTE_PATTERN.test(html),
+			() => hasSectionRules(html),
+			() => hasSectionsInBlocks(html),
 		]) {
 			const { ms } = fastest(run, maxMs);
 			assert.ok(ms < maxMs, `${label}: ${Math.round(ms)} ms, over ${Math.round(maxMs)} ms`);

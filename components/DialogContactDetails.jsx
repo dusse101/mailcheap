@@ -25,7 +25,7 @@ import { toast } from "@/lib/toast";
 
 // A contact's first name and its values for the account's fields, each with what prints it in emails; DialogContactTags
 // has its tags. contact: { id, email, firstName, fields }, with dates as YYYY-MM-DD.
-export default function DialogContactDetails({ contact, isOpen, onOpenChange }) {
+export default function DialogContactDetails({ contact, isOpen, onOpenChange, onCloseAutoFocus }) {
 	const [formKey, setFormKey] = useState(0);
 
 	function changeOpen(open) {
@@ -35,7 +35,7 @@ export default function DialogContactDetails({ contact, isOpen, onOpenChange }) 
 
 	return (
 		<Dialog open={isOpen} onOpenChange={changeOpen}>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent className="sm:max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
 				<FormContactDetails key={formKey} contact={contact} onDone={() => changeOpen(false)} />
 			</DialogContent>
 		</Dialog>

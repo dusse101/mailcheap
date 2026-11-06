@@ -48,6 +48,10 @@ export default function SenderAddressesPage() {
 					</>
 				)}
 			</p>
+			<p>
+				A domain can only be in one account. If yours is already taken, the <LinkApp href="/domains">Domains page</LinkApp> says so:
+				add a subdomain instead, like <code>mail.example.com</code>, or another domain.
+			</p>
 			<p>The page then lists the DNS records to add where your domain is managed (your registrar or DNS provider):</p>
 			<ol>
 				<li>
@@ -58,7 +62,9 @@ export default function SenderAddressesPage() {
 				</li>
 				<li>
 					<strong>DMARC</strong>: tells inboxes what to do with emails that fail the checks. Gmail and Yahoo require one from bulk
-					senders. Start with <code>p=none</code>, then move to <code>p=quarantine</code> once your reports look clean.
+					senders. Start with <code>p=none</code>, then move to <code>p=quarantine</code> once your reports look clean. A record on
+					the domain you registered covers its subdomains too: for <code>news.example.com</code>, the page says Found on{" "}
+					<code>example.com</code>.
 				</li>
 			</ol>
 			<p>

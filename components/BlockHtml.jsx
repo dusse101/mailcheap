@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Node } from "@tiptap/core";
 import { NodeSelection, Selection } from "@tiptap/pm/state";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
-import { CodeXml, Trash2 } from "lucide-react";
+import { CircleAlert, CodeXml, Trash2 } from "lucide-react";
 import FrameIssue from "@/components/FrameIssue";
 import InputHtml from "@/components/InputHtml";
 import LinkHelp from "@/components/LinkHelp";
 import { Button } from "@/components/ui/button";
+import { getHtmlBlockWarnings } from "@/lib/content-warnings";
 import { deleteBlock } from "@/lib/editor-undo-delete";
 import { renderBlockPreview } from "@/lib/render-email";
 import { cn } from "@/lib/utils";
@@ -17,9 +18,10 @@ import { cn } from "@/lib/utils";
 const EDIT_EVENT = "htmlblockedit";
 
 // An HTML block in the editor: what readers get from it once it's cleaned (lib/clean-html.js), in a frame where nothing
-// runs, and while it's edited its HTML instead, in color. A click, or Enter once it's selected, edits it, and Escape or
-// Done goes back to the issue, or the bin next to Done deletes it. One just added from the slash menu starts in editing.
-// The campaign's Preview shows it in the whole email.
+// runs, and while it's edited its HTML instead, in color, with the first thing that may look broken in it under it
+// (lib/content-warnings.js). A click, or Enter once it's selected, edits it, and Escape or Done goes back to the issue,
+// or the bin next to Done deletes it. One just added from the slash menu starts in editing. The campaign's Preview shows
+// it in the whole email.
 export default function BlockHtml({ node, updateAttributes, selected, editor, getPos, extension }) {
 	const { html } = node.attrs;
 	const [isEditing, setIsEditing] = useState(() => node.attrs.isNew && !html);
@@ -27,6 +29,8 @@ export default function BlockHtml({ node, updateAttributes, selected, editor, ge
 	const textareaRef = useRef(null);
 	const newsletter = extension.options.newsletter;
 	const previewHtml = useMemo(() => (isEditing ? null : renderBlockPreview(html, newsletter)), [isEditing, html, newsletter]);
+	const deferredHtml = useDeferredValue(html);
+	const warning = useMemo(() => (isEditing ? getHtmlBlockWarnings(deferredHtml)[0] : null), [isEditing, deferredHtml]);
 
 	// The issue's selection moves onto the block, so the format menu of a text selected before goes.
 	function edit() {
@@ -138,8 +142,17 @@ export default function BlockHtml({ node, updateAttributes, selected, editor, ge
 						</div>
 					))}
 				{isEditing ? (
-					<div className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground">
-						Use inline styles: scripts, forms and style tags are removed. <LinkHelp article="writing" section="html" />
+					<div aria-live="polite" className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground">
+						{warning ? (
+							<span className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
+								<CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+								{warning.message}
+							</span>
+						) : (
+							<>
+								Use inline styles: scripts, forms and style tags are removed. <LinkHelp article="writing" section="html" />
+							</>
+						)}
 					</div>
 				) : (
 					previewHtml && (
@@ -205,9 +218,14 @@ export const HtmlBlock = Node.create({
 			Enter: () => {
 				const { selection } = this.editor.state;
 				if (!(selection instanceof NodeSelection) || selection.node.type !== this.type) return false;
-				this.editor.view.nodeDOM(selection.from)?.querySelector("[data-node-view-wrapper]")?.dispatchEvent(new Event(EDIT_EVENT));
+				editHtmlBlock(this.editor.view, selection.from);
 				return true;
 			},
 		};
 	},
 });
+
+// Opens the block at pos for editing, as a click on it does.
+export function editHtmlBlock(view, pos) {
+	view.nodeDOM(pos)?.querySelector("[data-node-view-wrapper]")?.dispatchEvent(new Event(EDIT_EVENT));
+}

@@ -7,10 +7,10 @@ import {
 	describeSignupDays,
 	fromSignupDays,
 	readContactFilters,
-	readDayKey,
 	toFilterQuery,
 	toSignupDays,
 } from "../lib/contact-filters.js";
+import { readDateKey } from "../lib/time-zone.js";
 import { CONTACT_STATUSES } from "../models/Contact.js";
 import { activate, as, callApi, catchNotFound, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 
@@ -59,6 +59,8 @@ describe("the contacts lists' filters", () => {
 		assert.equal(describeSignupDays({ signedUpSince: "2026-10-02" }), "After Oct 1, 2026");
 		assert.equal(describeSignupDays({ signedUpSince: "2026-10-01", signedUpBefore: "2026-10-16" }), "Oct 1 – Oct 15, 2026");
 		assert.equal(describeSignupDays({ signedUpSince: "2025-12-20", signedUpBefore: "2026-01-06" }), "Dec 20, 2025 – Jan 5, 2026");
+		assert.equal(describeSignupDays({ signedUpSince: "2026-10-01", signedUpBefore: "2026-10-02" }), "Oct 1, 2026", "a single day");
+		assert.equal(describeSignupDays({ signedUpSince: "2026-10-01", signedUpBefore: "2026-10-02" }), "Oct 1, 2026", "a single day");
 	});
 
 	test("the address gives only filters that exist, and links keep them", () => {
@@ -77,8 +79,8 @@ describe("the contacts lists' filters", () => {
 			signedUpSince: null,
 			signedUpBefore: null,
 		});
-		assert.equal(readDayKey("2026-02-29"), null, "2026 has no February 29");
-		assert.equal(readDayKey("2028-02-29"), "2028-02-29");
+		assert.equal(readDateKey("2026-02-29"), null, "2026 has no February 29");
+		assert.equal(readDateKey("2028-02-29"), "2028-02-29");
 		assert.equal(toFilterQuery({ query: "a b", status: "active", tag: null, signedUpSince: "2026-10-01" }, { page: 2 }), "?q=a+b&status=active&signedUpSince=2026-10-01&page=2");
 		assert.equal(toFilterQuery({ query: "" }, { page: false }), "");
 	});
@@ -266,6 +268,11 @@ describe("the contacts and segments pages", () => {
 	test("a segment's page has its numbers next to the list's and its contacts of every status", async () => {
 		const html = await render(m.segmentPage, { params: Promise.resolve({ id: segmentId }), searchParams: Promise.resolve({}) });
 		assert.match(html, /<h1[^>]*>From the form<\/h1>/);
+		assert.match(
+			html,
+			/<a href="\/contacts\/segments" aria-label="Back"[^>]*>[\s\S]*?<\/a><span[^>]*><a href="\/contacts\/segments"[^>]*>Segments<\/a><span aria-hidden="true"[^>]*>\/<\/span><\/span><h1/,
+			"the back arrow, then a title under Segments"
+		);
 		for (const email of ["reader", "fan", "gone"]) assert.match(html, new RegExp(`${email}@example\\.org`));
 		assert.doesNotMatch(html, /quiet@example\.org/);
 		assert.match(html, /Active contacts/);
@@ -290,6 +297,13 @@ describe("the contacts and segments pages", () => {
 		const theirs = await as(stranger, () => m.actions.deleteListedContacts({ newsletterId, segmentId }));
 		assert.ok(theirs.error, "another account can't name this newsletter or segment");
 		assert.equal(await m.Contact.countDocuments({ accountId: user.accountId }), 3);
+	});
+
+	test("the filters come as status, signup date, source then tag", async () => {
+		await m.Contact.create({ accountId: user.accountId, newsletterId, email: "tagged@example.org", status: "active", source: "import", tags: ["vip"] });
+		const html = await render(m.contactsPage, { searchParams: Promise.resolve({}) });
+		const pills = [...html.matchAll(/<button[^>]*>(Status|Signed up|Source|Tag)<svg/g)].map(([, label]) => label);
+		assert.deepEqual(pills, ["Status", "Signed up", "Source", "Tag"]);
 	});
 });
 

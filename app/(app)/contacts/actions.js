@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { runDashboardAction, toFormError } from "@/lib/actions/dashboard";
+import { gravatarHash } from "@/lib/gravatar";
 
 // One chunk of a file: the first starts the import (with the file's name and its row count), the next ones pass its
 // importId. The rows go in in the background; getImports follows them.
@@ -26,11 +27,37 @@ export async function getImports(newsletterId) {
 	return output;
 }
 
-// With the box ticked, the contact is active at once: no confirmation email, the welcome email if it's on.
+// A page of what an import left out, with what's typed in the search, each with the hash its picture comes from
+// (AvatarContact).
+export async function getLeftOut(importId, { search, cursor } = {}) {
+	const { output, failure } = await runDashboardAction("list_left_out", {
+		id: String(importId ?? ""),
+		...(search && { search: String(search).slice(0, 254) }),
+		...(cursor && { cursor: String(cursor) }),
+	});
+	if (failure) return toFormError(failure);
+	return { contacts: output.contacts.map((contact) => ({ ...contact, gravatarHash: gravatarHash(contact.email) })), nextCursor: output.nextCursor };
+}
+
+// One address the import left out, added after all: whether it was, and the import's counts afterwards.
+export async function bringBackContact(importId, email) {
+	const { output, failure } = await runDashboardAction("bring_back_contacts", { id: String(importId ?? ""), emails: [String(email ?? "")] });
+	if (failure) return toFormError(failure);
+	const [result] = output.contacts;
+	if (result.broughtBack) revalidateContacts();
+	return { ...(result.error && { error: result.error }), broughtBack: result.broughtBack, import: output.import };
+}
+
+// With the box ticked, the contact is active at once: no confirmation email, the welcome email if it's on. A first name
+// and tags, a "tags" entry each, are optional; an address already on the list keeps its own.
 export async function addContact(_state, formData) {
+	const firstName = String(formData.get("firstName") ?? "").trim();
+	const tags = formData.getAll("tags").filter((tag) => typeof tag === "string");
 	const { output, failure } = await runDashboardAction("add_contact", {
 		newsletter: String(formData.get("newsletterId") ?? ""),
 		email: String(formData.get("email") ?? ""),
+		...(firstName && { firstName }),
+		...(tags.length > 0 && { tags }),
 		consent: formData.get("consent") === "on",
 	});
 	if (failure) return toFormError(failure);

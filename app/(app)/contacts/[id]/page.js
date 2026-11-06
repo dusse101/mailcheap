@@ -5,15 +5,10 @@ import {
 	Ban,
 	ChevronLeft,
 	ChevronRight,
-	Clock,
 	History,
-	Mail,
 	MailCheck,
-	MailOpen,
 	MailX,
 	Moon,
-	MousePointerClick,
-	Send,
 	ShieldAlert,
 	Tags as TagsIcon,
 	UserCheck,
@@ -32,15 +27,16 @@ import ButtonMergeTag from "@/components/ButtonMergeTag";
 import CardLocation from "@/components/CardLocation";
 import CardSettings from "@/components/CardSettings";
 import CardStat from "@/components/CardStat";
+import { EMAIL_OUTCOME_LOOKS, ICON_TONES } from "@/components/IconEmailOutcome";
 import ImageFavicon from "@/components/ImageFavicon";
 import LinkHelpFields from "@/components/LinkHelpFields";
 import LinkHelpTags from "@/components/LinkHelpTags";
 import MenuContactMore from "@/components/MenuContactMore";
 import MenuContactStatus from "@/components/MenuContactStatus";
 import ProviderContactOptions from "@/components/ProviderContactOptions";
+import TabsPage, { PanelTab } from "@/components/TabsPage";
 import TextEmpty from "@/components/TextEmpty";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { scoped } from "@/lib/account-scope";
 import { countContactEmails, listContactEmails } from "@/lib/contact-emails";
 import { MAX_CONTACT_FIELDS, contactFieldValues } from "@/lib/contact-fields";
@@ -54,7 +50,7 @@ import { fieldTag, fillSubject, firstNameTag } from "@/lib/merge-tags";
 import { PROVIDER_DOMAINS, PROVIDER_LABELS, mailboxProvider } from "@/lib/providers";
 import { rootDomain } from "@/lib/root-domain";
 import { findContactSegments, listLiveSegments } from "@/lib/segment-queries";
-import { getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
+import { findInNewsletters, getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
 import { TIME_ZONE_COOKIE, resolveTimeZone } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 import { isObjectIdString } from "@/lib/validation";
@@ -74,9 +70,10 @@ export default async function ContactPage({ params, searchParams }) {
 	const [{ id }, query, view, cookieStore] = await Promise.all([params, searchParams, getSelectedNewsletter(), cookies()]);
 	if (!isObjectIdString(id)) notFound();
 	const { account, newsletters } = view;
-	const contact = await Contact.findOne(scoped(account, { _id: id })).lean();
+	const contact = await findInNewsletters(view, Contact, id);
 	if (!contact) notFound();
 	openNewsletter(view, contact.newsletterId, `/contacts/${id}`);
+	if (!contact.newsletterId.equals(view.selected._id)) notFound();
 
 	const timeZone = resolveTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value);
 	const limit = Math.min(MAX_EMAILS, Math.max(EMAILS_STEP, Number.parseInt(query.emails, 10) || EMAILS_STEP));
@@ -126,7 +123,7 @@ export default async function ContactPage({ params, searchParams }) {
 						)}
 					</div>
 				</div>
-				<div className="flex basis-full flex-wrap items-center gap-2 max-sm:order-2 sm:basis-auto">
+				<div className="flex basis-full max-sm:order-2 sm:basis-auto">
 					<MenuContactStatus
 						id={id}
 						email={contact.email}
@@ -134,12 +131,9 @@ export default async function ContactPage({ params, searchParams }) {
 						label={contact.undeliverableAt && (UNDELIVERABLE_LABELS[contact.undeliverableReason] ?? "Undeliverable")}
 						undeliverableReason={contact.undeliverableReason}
 					/>
-					{/* Without their icons on a phone, the three fit on one line. */}
-					<ButtonEditContact contact={details} className="max-sm:[&_svg]:hidden" />
-					<ButtonEditTags contact={details} className="max-sm:[&_svg]:hidden" />
 				</div>
-				{/* On a phone, next to the name, above the buttons. */}
-				<MenuContactMore id={id} email={contact.email} status={contact.status} className="max-sm:order-1" />
+				{/* On a phone, next to the name, above their status. */}
+				<MenuContactMore contact={details} status={contact.status} className="max-sm:order-1" />
 			</header>
 
 			<div className="flex flex-col gap-6">
@@ -161,23 +155,7 @@ export default async function ContactPage({ params, searchParams }) {
 					</div>
 				</div>
 
-				{/* Every tab is rendered, the others hidden: they open at once, and the server's HTML has them all. */}
-				<Tabs defaultValue="activity" style={{ "--stagger": 3 }} className="gap-4 animate-enter">
-					<TabsList
-						variant="line"
-						className="w-full justify-start gap-6 overflow-x-auto rounded-none border-b border-border/60 p-0 group-data-horizontal/tabs:h-11 [scrollbar-width:none]"
-					>
-						<TriggerTab value="activity" icon={History}>
-							Activity
-						</TriggerTab>
-						<TriggerTab value="about" icon={UserRound}>
-							About
-						</TriggerTab>
-						<TriggerTab value="fields" icon={TagsIcon}>
-							Fields and tags
-						</TriggerTab>
-					</TabsList>
-
+				<TabsPage tabs={CONTACT_TABS} style={{ "--stagger": 3 }}>
 					<PanelTab value="activity">
 						<section aria-label="Activity" className="rounded-xl bg-card shadow-border">
 							<ol className="flex flex-col p-4">
@@ -325,29 +303,9 @@ export default async function ContactPage({ params, searchParams }) {
 							</div>
 						</CardSettings>
 					</PanelTab>
-				</Tabs>
+				</TabsPage>
 			</div>
 		</ProviderContactOptions>
-	);
-}
-
-function TriggerTab({ value, icon: Icon, children }) {
-	return (
-		<TabsTrigger
-			value={value}
-			className="h-full flex-none gap-2 px-0.5 group-data-horizontal/tabs:after:-bottom-px [&_svg:not([class*='size-'])]:size-3.5"
-		>
-			<Icon aria-hidden="true" />
-			{children}
-		</TabsTrigger>
-	);
-}
-
-function PanelTab({ value, className, children }) {
-	return (
-		<TabsContent value={value} forceMount className={cn("animate-fade-in data-[state=inactive]:hidden", className)}>
-			{children}
-		</TabsContent>
 	);
 }
 
@@ -440,14 +398,14 @@ function ItemTimeline({ icon: Icon, tone = "muted", title, at, before = null, ti
 // An email, by what it came to: the furthest of delivered, opened and clicked, or what stopped it. Its subject shows as
 // they got it, with their first name and field values.
 function ItemEmail({ email, contact, contactFields, timeZone }) {
-	const outcome = getOutcome(email);
-	const { verb, icon, tone } = OUTCOMES[outcome];
+	const { outcome } = email;
+	const { verb, icon, tone } = EMAIL_OUTCOME_LOOKS[outcome];
 	const links = email.clickedLinks.filter((url) => /^https?:\/\//i.test(url));
 	const moments = [
 		email.openedAt && `Opened ${formatMoment(email.openedAt, timeZone)}`,
 		email.clickedAt && `Clicked ${formatMoment(email.clickedAt, timeZone)}`,
 	].filter(Boolean);
-	const note = outcome === "unsent" ? UNSENT_REASONS[email.status] : outcome === "waiting" ? "Waiting to go out" : moments.join(" · ");
+	const note = OUTCOME_NOTES[outcome] ?? (outcome === "unsent" ? UNSENT_REASONS[email.status] : moments.join(" · "));
 
 	return (
 		<ItemTimeline
@@ -532,16 +490,6 @@ function getTimeline({ emails, hasMore, history }) {
 			.filter(({ at }) => new Date(at).getTime() >= oldest)
 			.map((event, index) => ({ key: `${event.type}-${index}`, at: event.at, event })),
 	].toSorted((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-}
-
-function getOutcome(email) {
-	if (email.complainedAt || email.status === "complained") return "complained";
-	if (email.bouncedAt || email.status === "bounced") return "bounced";
-	if (email.clickedAt) return "clicked";
-	if (email.openedAt) return "opened";
-	if (email.deliveredAt || email.status === "delivered") return "delivered";
-	if (email.sentAt || email.status === "sent") return "sent";
-	return ["held", "queued"].includes(email.status) ? "waiting" : "unsent";
 }
 
 function describeEvent(event, contact) {
@@ -647,24 +595,13 @@ function formatMoment(value, timeZone) {
 	return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone });
 }
 
-const ICON_TONES = {
-	muted: "bg-muted text-muted-foreground",
-	green: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
-	blue: "bg-sky-500/12 text-sky-600 dark:text-sky-400",
-	amber: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
-	red: "bg-red-500/10 text-red-600 dark:text-red-400",
-};
+const CONTACT_TABS = [
+	{ value: "activity", icon: History, label: "Activity" },
+	{ value: "about", icon: UserRound, label: "About" },
+	{ value: "fields", icon: TagsIcon, label: "Fields and tags" },
+];
 
-const OUTCOMES = {
-	complained: { verb: "Marked as spam", icon: ShieldAlert, tone: "red" },
-	bounced: { verb: "Bounced", icon: MailX, tone: "red" },
-	clicked: { verb: "Clicked", icon: MousePointerClick, tone: "green" },
-	opened: { verb: "Opened", icon: MailOpen, tone: "blue" },
-	delivered: { verb: "Received", icon: Mail, tone: "muted" },
-	sent: { verb: "Sent", icon: Send, tone: "muted" },
-	waiting: { verb: "Sending", icon: Clock, tone: "muted" },
-	unsent: { verb: "Not sent", icon: Ban, tone: "muted" },
-};
+const OUTCOME_NOTES = { waiting: "Waiting to go out", undelivered: "It never reached their inbox" };
 
 const UNSENT_REASONS = {
 	failed: "It couldn't be sent",

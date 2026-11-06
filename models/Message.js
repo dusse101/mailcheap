@@ -39,6 +39,9 @@ const messageSchema = new mongoose.Schema(
 		clickedLinks: { type: [String], default: undefined },
 		bouncedAt: Date,
 		complainedAt: Date,
+		// They unsubscribed through it: the latest issue they got, for an unsubscribe link or their mail app's button
+		// (app/api/unsubscribe), or the email the provider's own unsubscribe names (lib/email-events.js).
+		unsubscribedAt: Date,
 	},
 	{ timestamps: true }
 );
@@ -60,6 +63,8 @@ messageSchema.index({ contactId: 1, _id: -1 });
 messageSchema.index({ kind: 1, createdAt: -1 });
 // The overview's emails sent per hour.
 messageSchema.index({ newsletterId: 1, sentAt: 1 });
+// A newsletter's welcome emails over the overview's period, up to two years, without reading every account's.
+messageSchema.index({ newsletterId: 1, createdAt: 1 }, { partialFilterExpression: { kind: "welcome" } });
 messageSchema.index({ campaignId: 1, status: 1 });
 // Emails still waiting to go out, which the plan check counts before a new send.
 messageSchema.index({ accountId: 1, campaignId: 1 }, { partialFilterExpression: { status: "queued" } });

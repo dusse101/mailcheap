@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import ButtonsSegment from "@/components/ButtonsSegment";
 import CardStat from "@/components/CardStat";
 import FilterContacts from "@/components/FilterContacts";
+import { TitlePage } from "@/components/HeaderPage";
 import ProviderContactOptions from "@/components/ProviderContactOptions";
 import StateEmpty from "@/components/StateEmpty";
 import TableContacts, { NavPages } from "@/components/TableContacts";
@@ -14,11 +14,12 @@ import { getFieldOptions } from "@/lib/contact-fields";
 import { LIST_STATUSES, hasContactFilters, readContactFilters, toFilterQuery, toListQuery } from "@/lib/contact-filters";
 import { CONTACTS_PAGE_SIZE, findContactsPage, listContactSources, listContactTags } from "@/lib/contacts";
 import { formatDate, formatNumber, formatRate, formatRateChange } from "@/lib/format";
-import { countActivity, findLiveSegment } from "@/lib/segment-queries";
+import { countActivity } from "@/lib/segment-queries";
 import { ACTIVITY_DAYS, compileSegment, describeSegment } from "@/lib/segments";
-import { getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
+import { findInNewsletters, getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
 import { isObjectIdString } from "@/lib/validation";
 import Campaign from "@/models/Campaign";
+import Segment from "@/models/Segment";
 
 export const metadata = { title: "Segment" };
 
@@ -28,9 +29,10 @@ export default async function SegmentPage({ params, searchParams }) {
 	const [{ id }, query, view] = await Promise.all([params, searchParams, getSelectedNewsletter()]);
 	if (!isObjectIdString(id)) notFound();
 	const { account } = view;
-	const segment = await findLiveSegment(account, id);
-	if (!segment) notFound();
+	const segment = await findInNewsletters(view, Segment, id);
+	if (!segment || segment.deletedAt) notFound();
 	openNewsletter(view, segment.newsletterId, `/contacts/segments/${id}`);
+	if (!segment.newsletterId.equals(view.selected._id)) notFound();
 
 	const newsletterId = String(segment.newsletterId);
 	const filters = readContactFilters(query, LIST_STATUSES);
@@ -62,16 +64,7 @@ export default async function SegmentPage({ params, searchParams }) {
 		<ProviderContactOptions fields={fields} tags={tags}>
 			<header className="mb-8 flex flex-col gap-1 animate-enter">
 				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-					<div className="flex min-w-0 items-center gap-2">
-						<Link
-							href="/contacts/segments"
-							aria-label="Segments"
-							className="-ml-2 grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
-						>
-							<ChevronLeft className="size-5" />
-						</Link>
-						<h1 className="truncate text-2xl font-semibold tracking-tight">{segment.name}</h1>
-					</div>
+					<TitlePage title={segment.name} parent={{ label: "Segments", href: "/contacts/segments" }} />
 					<div className="flex items-center gap-2">
 						<ButtonsSegment newsletterId={newsletterId} segment={rules} filters={filters} count={total} />
 					</div>

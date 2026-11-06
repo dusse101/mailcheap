@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, Bell, CircleCheck, CirclePause, X } from "lucide-react";
+import { Ban, Bell, CircleCheck, CirclePause, MailX, X } from "lucide-react";
 import { dismissAttentionAction } from "@/app/admin/actions";
 import DialogAttention from "@/components/DialogAttention";
 import { formatRelative } from "@/lib/format";
@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 const ICONS = {
+	cantSend: { icon: MailX, tone: "text-red-500" },
 	blocked: { icon: Ban, tone: "text-red-500" },
 	paused: { icon: CirclePause, tone: "text-amber-500" },
 	alert: { icon: Bell, tone: "text-muted-foreground" },
@@ -109,17 +110,24 @@ export default function ListAttentionItems({ items, dismissed, now }) {
 	);
 }
 
+// isUrgent: a customer with a plan who can't send, in red.
 function ButtonItem({ item, now, onClick, isMuted = false }) {
 	const { icon: Icon, tone } = ICONS[item.icon] ?? ICONS.alert;
+	const isUrgent = item.isUrgent && !isMuted;
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex w-full items-start gap-3 py-2.5 pr-11 pl-4 text-left outline-none transition-colors duration-150 hover:bg-muted/50 focus-visible:bg-muted/60"
+			className={cn(
+				"flex w-full items-start gap-3 py-2.5 pr-11 pl-4 text-left outline-none transition-colors duration-150",
+				isUrgent ? "bg-red-500/5 hover:bg-red-500/10 focus-visible:bg-red-500/10" : "hover:bg-muted/50 focus-visible:bg-muted/60"
+			)}
 		>
 			<Icon className={cn("mt-0.5 size-4 shrink-0", isMuted ? "text-muted-foreground" : tone)} aria-hidden="true" />
 			<span className="min-w-0 flex-1">
-				<span className={cn("block truncate text-sm font-medium", isMuted && "text-muted-foreground")}>{item.title}</span>
+				<span className={cn("block truncate text-sm font-medium", isMuted && "text-muted-foreground", isUrgent && "text-red-600 dark:text-red-400")}>
+					{item.title}
+				</span>
 				{item.detail && <span className="line-clamp-2 text-xs text-pretty text-muted-foreground">{item.detail}</span>}
 			</span>
 			{item.at && <span className="shrink-0 pt-px text-xs text-muted-foreground tabular-nums">{formatRelative(item.at, now)}</span>}

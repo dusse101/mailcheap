@@ -1,12 +1,13 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import FigureHelp from "@/components/FigureHelp";
 import LinkApp from "@/components/LinkApp";
 import { FIRST_SEND, LIMITS, isCloud } from "@/lib/config";
 import { CLASSIFIER_CHECKS } from "@/lib/content-review-codes";
 import { getFirstSendSteps } from "@/lib/first-send";
 import { formatCount, formatNumber, formatPercent } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
-import { COMPARED_ISSUES, TIMELINE_HOURS } from "@/lib/report-stats";
+import { COMPARED_ISSUES, MAX_VIEW_DAYS, TIMELINE_HOURS } from "@/lib/report-stats";
 
 export const metadata = getHelpPageMetadata("sending");
 
@@ -24,6 +25,10 @@ export default function SendingPage() {
 			<p>Before a campaign can go out, the review step checks it:</p>
 			<ul>
 				<li>a subject, and content, with each button&apos;s text and link;</li>
+				<li>
+					readers for each <Link href={getHelpHref("writing", "sections")}>section</Link>: one whose segment was deleted waits until
+					you pick who sees it;
+				</li>
 				<li>the unsubscribe link, which MailCheap adds to every issue written in the editor;</li>
 				<li>a size under 100 KB, since Gmail cuts off longer emails;</li>
 				<li>
@@ -34,6 +39,11 @@ export default function SendingPage() {
 					<Link href={getHelpHref("sender-addresses", "dns-checks")}>When a record changes</Link>
 				</li>
 			</ul>
+			<FigureHelp
+				src="/help/sending/review.webp"
+				alt="The review step's checklist, every check passed, then sending a test email and the preview."
+				caption="The review step"
+			/>
 			<p>
 				It also warns about a subject over 70 characters, which inboxes cut off, a missing preview text and a missing test email,
 				and about what may look broken to your readers:
@@ -42,6 +52,10 @@ export default function SendingPage() {
 				<li>
 					a <Link href={getHelpHref("writing", "first-name")}>merge tag</Link> MailCheap doesn&apos;t fill in, like one from another
 					platform, which goes out as written;
+				</li>
+				<li>
+					a <Link href={getHelpHref("writing", "first-name")}>name or field</Link> without a fallback after its bar, which leaves a gap
+					for readers without a value;
 				</li>
 				<li>
 					a link with no address, one that isn&apos;t a working address or needs the full one, starting with https://, one to a
@@ -56,7 +70,9 @@ export default function SendingPage() {
 				<li>HTML or Markdown pasted as text, like **bold**, which readers would see as it is.</li>
 			</ul>
 			<p>
-				Edit content takes you to the words in question. Warnings don&apos;t stop you.
+				Edit content takes you to each one in the issue, lit for a moment, where a{" "}
+				<Link href={getHelpHref("writing", "problems")}>dot beside it</Link> says what&apos;s wrong. Warnings don&apos;t stop you.
+				The size check counts the biggest email, with every section in.
 				{isCloud() &&
 					" Problems with your account show in red above the steps: your plan's limits, and on the send step a send bigger than what your plan has left this month."}{" "}
 				A web-only issue sends no email, so it only needs a subject, content and the website on.
@@ -87,6 +103,11 @@ export default function SendingPage() {
 				never shows there, in its sitemap or in search engines, and its emails have no Read online link. Web only puts it on the
 				website without sending any email, so it uses none of your plan&apos;s emails, and its button says Publish now.
 			</p>
+			<FigureHelp
+				src="/help/sending/where.webp"
+				alt="The send step's Where it goes card, with Email and web, Email only and Web only."
+				caption="Email, web or both"
+			/>
 			<p>
 				Web only needs the website on. A web-only issue can be scheduled like any other
 				{isCloud() ? ", and the content check reads it before it goes live" : ""}. Its page counts views instead of opens and clicks.
@@ -99,13 +120,22 @@ export default function SendingPage() {
 				out of all of them. New segment makes one without leaving the step, like your most engaged contacts.{" "}
 				<Link href={getHelpHref("contacts", "segments")}>Segments</Link>
 			</p>
+			<FigureHelp
+				src="/help/sending/who.webp"
+				alt="The send step's To menu, with everyone and two segments to pick from."
+				caption="Picking who gets it"
+			/>
 			<p>
 				A draft whose segment was deleted waits until you pick another.
-				{isCloud() && " A send can't go over what your plan has left this month: pick a smaller segment, or upgrade."}
+				{isCloud() && " A send can't go over what your plan has left this month: pick a smaller segment, or upgrade."} Who gets
+				the issue is one thing; who sees a part of it is a{" "}
+				<Link href={getHelpHref("writing", "sections")}>section</Link>&apos;s, which never changes who gets it.
 			</p>
 			<p>
-				The same step shows the issue&apos;s web page address, which you can change, and what the{" "}
-				<Link href={getHelpHref("list-cleanup")}>list cleanup</Link> will do at this send.
+				The same step shows what the <Link href={getHelpHref("list-cleanup")}>list cleanup</Link> will do at this send, and for an
+				issue that goes on your website, its page there: the picture, title and description of its card on your website and in
+				link previews, and its address, which you can change.{" "}
+				<Link href={getHelpHref("website", "issue-pages")}>Issue pages</Link>
 			</p>
 
 			<h2 id="when">Send now or schedule</h2>
@@ -115,6 +145,11 @@ export default function SendingPage() {
 				itself, up to a year ahead; the checks and{isCloud() ? " your plan's limits" : " limits"} run when you schedule it and again
 				when it goes out. Unschedule turns it back into a draft.
 			</p>
+			<FigureHelp
+				src="/help/sending/schedule.webp"
+				alt="The send step's calendar and times under Schedule, starting at the time of the last issue."
+				caption="Scheduling an issue"
+			/>
 			{isCloud() && (
 				<p>
 					Most issues go out at once. From a new domain, Gmail&apos;s readers can get the issue the next day.{" "}
@@ -179,7 +214,8 @@ export default function SendingPage() {
 					</p>
 					<p>
 						When an issue looks clearly harmful, its send waits and its page says In review: a person at MailCheap looks at it,
-						usually within a few hours, then sends it as you wrote it or tells you why it can&apos;t go out.{" "}
+						usually within a few hours, then sends it as you wrote it or tells you why it can&apos;t go out. The bell in the
+						dashboard tells you when it&apos;s in review and when it&apos;s on its way.{" "}
 						<Link href="/acceptable-use">Acceptable use policy</Link>
 					</p>
 					<p>
@@ -188,10 +224,12 @@ export default function SendingPage() {
 						still goes straight out.
 					</p>
 					<p>
-						The check also reads your own welcome and confirmation emails when you save them. If one looks clearly harmful, the{" "}
-						<LinkApp href="/newsletters/welcome">Welcome email</LinkApp> or <LinkApp href="/newsletters/signups">Confirm signups</LinkApp>{" "}
-						page says In review until a person at MailCheap looks at it. Meanwhile, new subscribers get the built-in confirmation
-						email, or no welcome email. If it can&apos;t go out, you get an email saying why, and changing it has it checked again.
+						The check also reads your own welcome, confirmation and last-chance emails when you save them. If one looks clearly
+						harmful, the <LinkApp href="/newsletters/welcome">Welcome email</LinkApp>,{" "}
+						<LinkApp href="/newsletters/signups">Confirm signups</LinkApp> or <LinkApp href="/newsletters/cleanup">List cleanup</LinkApp>{" "}
+						page says In review until a person at MailCheap looks at it. Meanwhile, MailCheap&apos;s own confirmation and last-chance
+						emails go out instead, and new subscribers get no welcome email. If it can&apos;t go out, you get an email saying why, and
+						changing it has it checked again.
 					</p>
 				</>
 			)}
@@ -205,11 +243,29 @@ export default function SendingPage() {
 
 			<h2 id="report">The report</h2>
 			<p>
-				Each sent campaign&apos;s page shows how many emails were delivered, opened and clicked, and how many bounced or led to an
-				unsubscribe, with results by inbox provider, like Gmail or Outlook, where you also see how many were marked as spam. It
-				counts the list cleanup&apos;s last-chance emails apart. Opens are an estimate: some inboxes load every email&apos;s images
-				on their own, which counts as an open, and some readers block images. Preview, at the top, shows the email as it went out,
-				in a mail app or in Gmail on a phone, as a sample reader or as one of your contacts.
+				Under its subject, a sent campaign&apos;s page says when it went out and, once it&apos;s on your website, links to its page
+				there. Each sent campaign&apos;s page shows at the top how many emails were delivered, opened and clicked, and how many bounced or
+				led to an unsubscribe. It counts the list cleanup&apos;s last-chance emails apart. Bounced only counts hard bounces, like an
+				address that doesn&apos;t exist: an email still on its way, or that an inbox refused for another reason, like a full
+				mailbox, shows under Delivered as not delivered. Opens are an estimate: some inboxes, like Gmail, load an email&apos;s
+				images as it arrives, which counts as an open within seconds whether or not it&apos;s read, and some readers block images.
+			</p>
+			<p>
+				Under those numbers, tabs break the send down: Timeline, its opens and clicks hour by hour; Links, what readers clicked,
+				with the click map; Recipients, who it went to and what each did; Inboxes, its results by inbox provider, like Gmail or
+				Outlook, where you also see how many were marked as spam; and Website, for an issue on your website, its page and its
+				views. Edit web page, at the top, changes the page itself, its title, picture and content, while the email stays as it was
+				sent.{" "}
+				<Link href={getHelpHref("website", "edit-page")}>Changing a page after it&apos;s out</Link>
+			</p>
+			<FigureHelp
+				src="/help/sending/report.webp"
+				alt="A sent issue's report: delivered, opened and clicked with their difference from the average, then opens and clicks hour by hour."
+				caption="A sent issue's report"
+			/>
+			<p>
+				Preview, in the <strong>⋯</strong> menu at the top of the page, shows the email as it went out, in a mail app or in Gmail
+				on a phone, as a sample reader or as one of your contacts.
 			</p>
 			<p>
 				Opened and clicked compare with the newsletter&apos;s last {COMPARED_ISSUES} issues: &ldquo;+4.2% vs avg&rdquo; when an
@@ -218,20 +274,62 @@ export default function SendingPage() {
 				opens keep coming until then.
 			</p>
 			<p>
-				A chart shows the opens and clicks hour by hour for the first {TIMELINE_HOURS / 24} days after sending, in your timezone:
+				Timeline shows the opens and clicks hour by hour for the first {TIMELINE_HOURS / 24} days after sending, in your timezone:
 				when most opens came, and how fast half of them did. Each contact counts once, at their first open and first click. The
 				opens after those {TIMELINE_HOURS / 24} days are counted under the chart.
 			</p>
 			<p>
-				Its links come last, below the results by inbox provider, each with its website&apos;s icon, most clicked first: how many
-				contacts clicked each one, every click, and each link&apos;s share of the contacts who clicked a link. A link counts once
+				Links lists the links readers clicked, each with its website&apos;s icon, most clicked first: how many contacts clicked
+				each one, every click, and each link&apos;s share of the contacts who clicked a link. A link counts once
 				whatever its tracking parameters, like utm_source, and link scanners and the unsubscribe link don&apos;t count. An issue
 				sent before clicks were counted per link only has the clicks since then. The API and AI assistants get the same numbers,
-				the comparison and the hours included, in the campaign&apos;s report.
+				the comparison, the hours and the page&apos;s views day by day included, in the campaign&apos;s report.
 			</p>
 			<p>
-				A web-only issue&apos;s page shows its views on the website instead, once per reader a day, and when it went live. Web-only
-				issues don&apos;t count in the comparison with your last issues.
+				Click map, in Links, shows the email as it went out, in a mail app or in Gmail on a phone, as a sample reader or as one
+				of your contacts, with those clicks on it, so you see where in the issue people clicked: by each link that got some, how
+				many contacts clicked it and its share. Point at one to outline its link. A link the email has twice shows its clicks on
+				both, counted together. Clicks, at its top, hides them.
+			</p>
+			<FigureHelp
+				src="/help/sending/click-map.webp"
+				alt="An issue in the click map, with how many contacts clicked each link and its share next to it."
+				caption="The click map"
+			/>
+			<p>
+				Website shows the page as your website and link previews show it, with Edit web page, View and Pin to top, and its
+				address, which you can change there. Beside it are its views, each reader counted once a day: in all, today, over the
+				last 7 days and on its best day, then day by day since it went on your website, its first month and the days still to
+				come at least, its last {MAX_VIEW_DAYS} days at most. A page that had views before they were counted day by day shows its
+				days from then, and those views count in its total.
+			</p>
+			<FigureHelp
+				src="/help/sending/website-tab.webp"
+				alt="A sent issue's Website tab: its card with its picture, title and description, Edit web page, View and Pin to top, its address, and beside it its page views, day by day."
+				caption="An issue's page and its views"
+			/>
+			<p>
+				A web-only issue&apos;s report shows the same, in place of the email&apos;s numbers. Web-only issues don&apos;t count in the
+				comparison with your last issues.
+			</p>
+
+			<h2 id="recipients">Who opened and clicked</h2>
+			<p>
+				Recipients lists everyone an issue went to and what each did with it: when it reached them, when they
+				first opened and clicked it, the links they clicked, and whether it bounced, they marked it as spam or they unsubscribed
+				through it. Pick Opened, Clicked or Didn&apos;t open to see only them, and Not delivered, Bounced or Unsubscribed once
+				someone is there. People come in the order they joined your list, and each one opens their contact&apos;s page. An
+				unsubscribe counts for the latest issue they got, and a contact you deleted shows without their address.
+			</p>
+			<FigureHelp
+				src="/help/sending/recipients.webp"
+				alt="A sent issue's recipients under filters with their counts, each with what they did, when, and the links they clicked."
+				caption="Who opened and clicked"
+			/>
+			<p>
+				Opens there are an estimate too: Gmail and some other inboxes load an email&apos;s images as it arrives, so an open within
+				seconds of it reaching them can be their inbox rather than them. Link scanners&apos; visits don&apos;t count as clicks. The API
+				and AI assistants list recipients the same way.
 			</p>
 		</ArticleHelp>
 	);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { saveSignupForm } from "@/app/(app)/newsletters/actions";
 import BarSave from "@/components/BarSave";
 import BlockCode from "@/components/BlockCode";
+import BlockPrompt from "@/components/BlockPrompt";
 import { Segmented } from "@/components/FieldsTheme";
 import { Field, Section } from "@/components/FormNewsletter";
 import LinkHelp from "@/components/LinkHelp";
@@ -12,8 +13,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { firstNameTag } from "@/lib/merge-tags";
 import { getSectionPath } from "@/lib/newsletter-sections";
-import { SIGNUP_FORM_DEFAULTS, SIGNUP_FORM_LIMITS, getEmbedCode, getSignupFormHeading, toSignupFormSettings } from "@/lib/signup-form";
+import {
+	SIGNUP_FORM_DEFAULTS,
+	SIGNUP_FORM_LIMITS,
+	getAgentPrompt,
+	getEmbedCode,
+	getSignupFormHeading,
+	toSignupFormSettings,
+} from "@/lib/signup-form";
 import { renderFormPage } from "@/lib/signup-form-page";
 import { toast } from "@/lib/toast";
 import { useIsClient } from "@/lib/use-is-client";
@@ -32,6 +41,7 @@ export default function FormEmbed({ newsletter, appUrl, hasBotCheck = true }) {
 	const [isSaving, startSaving] = useTransition();
 	const settings = toSignupFormSettings(toInput(draft, newsletter));
 	const code = getEmbedCode({ appUrl, newsletterId: newsletter._id, settings, theme: newsletter.theme, newsletter });
+	const prompt = getAgentPrompt({ appUrl, newsletterId: newsletter._id, newsletter, settings, code, isOn: saved.enabled, hasPlan });
 
 	function set(key, value) {
 		setDraft((current) => ({ ...current, [key]: value }));
@@ -111,7 +121,17 @@ export default function FormEmbed({ newsletter, appUrl, hasBotCheck = true }) {
 						</Field>
 					</>
 				)}
-				<Field label="First name" as="div">
+				<Field
+					label="First name"
+					as="div"
+					hint={
+						<>
+							Saved as their first name, which{" "}
+							<code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">{firstNameTag()}</code> prints in your
+							emails. <LinkHelp article="writing" section="first-name" />
+						</>
+					}
+				>
 					<label className="flex items-center gap-3 text-sm text-muted-foreground sm:pt-2">
 						<Switch checked={draft.askFirstName} onCheckedChange={(isChecked) => set("askFirstName", isChecked)} />
 						Ask for it above the email, optional for readers
@@ -135,7 +155,7 @@ export default function FormEmbed({ newsletter, appUrl, hasBotCheck = true }) {
 				</Field>
 			</Section>
 			<Section title="Code to paste" stagger={3}>
-				<CodeSignupForm code={code} />
+				<CodeSignupForm code={code} prompt={prompt} />
 			</Section>
 			<Section title="Where it works" stagger={4}>
 				<Field
@@ -218,11 +238,18 @@ function PreviewSignupForm({ newsletter, settings }) {
 	);
 }
 
-function CodeSignupForm({ code }) {
+// The prompt comes first: people build their sites with AI agents, which pick the code that fits. Where to paste it is for
+// the codes, as the agent knows where the form goes.
+function CodeSignupForm({ code, prompt }) {
+	const [tab, setTab] = useState("agent");
+
 	return (
-		<Tabs defaultValue="script" className="gap-3 p-4">
+		<Tabs value={tab} onValueChange={setTab} className="gap-3 p-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<TabsList>
+					<TabsTrigger value="agent" className="px-3">
+						AI agent
+					</TabsTrigger>
 					<TabsTrigger value="script" className="px-3">
 						Script
 					</TabsTrigger>
@@ -230,12 +257,21 @@ function CodeSignupForm({ code }) {
 						HTML
 					</TabsTrigger>
 				</TabsList>
-				<LinkHelp article="website" section="form-on-your-site" className="text-xs">
-					Where to paste it
-				</LinkHelp>
+				{tab !== "agent" && (
+					<LinkHelp article="website" section="form-on-your-site" className="text-xs">
+						Where to paste it
+					</LinkHelp>
+				)}
 			</div>
+			<TabsContent value="agent" className="flex flex-col gap-2">
+				<BlockPrompt prompt={prompt} />
+				<p className="text-xs text-pretty text-muted-foreground">
+					For the AI agent that builds your site, like Cursor, Claude Code, Codex or Lovable: it picks the code that fits your site,
+					adds the form, then tells you what&apos;s left to do here.
+				</p>
+			</TabsContent>
 			<TabsContent value="script" className="flex flex-col gap-2">
-				<BlockCode title="Script" code={code.script} />
+				<BlockCode title="Script" code={code.script} hasCopyLabel />
 				<p className="text-xs text-pretty text-muted-foreground">
 					Your theme, and the thank-you shows in place. Changes you save here reach your site on their own.
 				</p>
@@ -243,7 +279,7 @@ function CodeSignupForm({ code }) {
 			<TabsContent value="html" className="flex flex-col gap-2">
 				{code.html ? (
 					<>
-						<BlockCode title="HTML" code={code.html} />
+						<BlockCode title="HTML" code={code.html} hasCopyLabel />
 						<p className="text-xs text-pretty text-muted-foreground">
 							Works without JavaScript and takes your site&apos;s font. Copy it again after changing the form&apos;s text or layout.
 						</p>

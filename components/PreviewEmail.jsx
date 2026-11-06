@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Monitor, Smartphone } from "lucide-react";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
+import { openLinksOutside } from "@/lib/email-preview";
 import { cn } from "@/lib/utils";
 
 // fit="fill" stretches to the parent's height (editor); fit="content" grows to the email (report).
@@ -77,10 +78,12 @@ export default function PreviewEmail({
 				<iframe
 					ref={frameRef}
 					title="Email preview"
-					// Same origin lets the report read the email's height; without allow-scripts nothing in it runs.
-					sandbox={isContentFit ? "allow-same-origin" : ""}
+					// Same origin lets the page read the email's height and open its links outside it; without allow-scripts
+					// nothing in it runs.
+					sandbox="allow-same-origin"
 					srcDoc={html}
 					onLoad={(event) => {
+						openLinksOutside(event.currentTarget);
 						if (!isContentFit) return;
 						const height = measureEmail(event.currentTarget);
 						if (height) setContentHeight(height);

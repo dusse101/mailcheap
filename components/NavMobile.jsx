@@ -8,8 +8,9 @@ import NavLinks from "@/components/NavLinks";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
-// The newsletter menu stays in the top bar, so a phone always shows which newsletter is open.
-export default function NavMobile({ isAdmin, switcher, footer }) {
+// The newsletter menu stays in the top bar, so a phone always shows which newsletter is open, and so does the
+// notifications' bell (notifications).
+export default function NavMobile({ isAdmin, role, switcher, notifications, footer }) {
 	const [isOpen, setIsOpen] = useState(false);
 
 	// The account menu's items render in a portal, but React still bubbles their clicks up to the footer.
@@ -28,20 +29,23 @@ export default function NavMobile({ isAdmin, switcher, footer }) {
 				</span>
 				{switcher}
 			</div>
-			<Sheet open={isOpen} onOpenChange={setIsOpen}>
-				<SheetTrigger asChild>
-					<Button variant="ghost" size="icon" aria-label="Menu">
-						<Menu />
-					</Button>
-				</SheetTrigger>
-				<SheetContent side="left" className="w-64 gap-0 p-3 pt-14">
-					<SheetTitle className="sr-only">Menu</SheetTitle>
-					<NavLinks isAdmin={isAdmin} onNavigate={() => setIsOpen(false)} />
-					<div className="mt-auto pt-4" onClick={closeAfterLink}>
-						{footer}
-					</div>
-				</SheetContent>
-			</Sheet>
+			<div className="flex shrink-0 items-center">
+				{notifications}
+				<Sheet open={isOpen} onOpenChange={setIsOpen}>
+					<SheetTrigger asChild>
+						<Button variant="ghost" size="icon" aria-label="Menu">
+							<Menu />
+						</Button>
+					</SheetTrigger>
+					<SheetContent side="left" className="w-64 gap-0 p-3 pt-14">
+						<SheetTitle className="sr-only">Menu</SheetTitle>
+						<NavLinks isAdmin={isAdmin} role={role} onNavigate={() => setIsOpen(false)} />
+						<div className="mt-auto pt-4" onClick={closeAfterLink}>
+							{footer}
+						</div>
+					</SheetContent>
+				</Sheet>
+			</div>
 		</header>
 	);
 }

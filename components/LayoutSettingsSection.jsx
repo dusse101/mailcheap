@@ -2,7 +2,7 @@ import FormNewsletter from "@/components/FormNewsletter";
 import HeaderPage from "@/components/HeaderPage";
 import LayoutNarrow from "@/components/LayoutNarrow";
 import { getFieldOptions } from "@/lib/contact-fields";
-import { SETTINGS_PATH, getSection } from "@/lib/newsletter-sections";
+import { SETTINGS_PARENT, getSection } from "@/lib/newsletter-sections";
 import { serialize } from "@/lib/serialize";
 
 // A section's page of the open newsletter's settings (lib/newsletter-sections.js), back to the overview. page: what
@@ -13,7 +13,7 @@ export default function LayoutSettingsSection({ section, page, preselectDomain =
 
 	return (
 		<LayoutNarrow>
-			<HeaderPage title={getSection(section).label} backHref={SETTINGS_PATH} />
+			<HeaderPage title={getSection(section).label} parent={SETTINGS_PARENT} />
 			<FormNewsletter
 				key={String(newsletter._id)}
 				section={section}

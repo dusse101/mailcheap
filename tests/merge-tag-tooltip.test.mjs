@@ -4,21 +4,30 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ContentMergeTag } from "../components/TooltipMergeTag.jsx";
+import { ContentMergeTag, getTagContext } from "../components/TooltipMergeTag.jsx";
 import { MergeTags } from "../lib/editor-merge-tags.js";
 
 // A tag's pill in the editor (lib/editor-merge-tags.js) and the tooltip pointing at it shows
-// (components/TooltipMergeTag.jsx): its field, what a reader with a value gets, the fallback after its |, and Preview.
+// (components/TooltipMergeTag.jsx): its sentence as Jane gets it and as a reader without a value does, where that text
+// comes from, and Preview.
 const FIELDS = [
 	{ key: "company", label: "Company", type: "text" },
 	{ key: "vip_tier", label: "VIP tier", type: "text" },
 	{ key: "points", label: "Points", type: "number" },
 	{ key: "birthday", label: "Birthday", type: "date" },
 ];
+const FIRST_NAME = { key: "first_name", label: "First name", type: "text" };
 
-function readTooltip(field, fallback = "") {
-	return renderToStaticMarkup(createElement(ContentMergeTag, { field, fallback }))
-		.replace(/<[^>]+>/g, " ")
+function renderTooltip(props) {
+	return renderToStaticMarkup(createElement(ContentMergeTag, props));
+}
+
+// Its words as read: a space between its lines, none within a sentence.
+function readTooltip(props) {
+	return renderTooltip(props)
+		.replace(/<\/?(dl|dt|dd|p|div)\b[^>]*>/g, " ")
+		.replace(/<[^>]+>/g, "")
+		.replaceAll("&#x27;", "'")
 		.replace(/\s+/g, " ")
 		.trim();
 }
@@ -43,19 +52,39 @@ test("each pill carries its tag's key and fallback", () => {
 	editor.destroy();
 });
 
-test("the tooltip says what a reader gets with a value and without one, and points to Preview", () => {
+test("the tooltip reads the tag's sentence as Jane gets it and as a reader without one does", () => {
 	assert.equal(
-		readTooltip({ key: "first_name", label: "First name", type: "text" }, "there"),
-		"First name With one like Jane Without one there After the | is what readers without one get. Pick a reader in Preview to see theirs."
+		readTooltip({ field: FIRST_NAME, fallback: "there", before: "Hey ", after: "," }),
+		"Each reader's first name Jane sees Hey Jane, No first name Hey there, “there” comes from after the |. Pick a reader in Preview to see it for real."
 	);
 	assert.equal(
-		readTooltip(FIELDS[2]),
-		"Points With one like 1,250 Without one nothing Add | and a word before the }} for readers without one. Pick a reader in Preview to see theirs."
+		readTooltip({ field: FIELDS[0], fallback: "your team", before: "…crew at ", after: " gets…" }),
+		"Each reader's company A reader sees …crew at their company gets… No company …crew at your team gets… “your team” comes from after the |. Pick a reader in Preview to see it for real."
 	);
 });
 
-test("its example follows the field's type, and text fields read their own name", () => {
-	assert.match(readTooltip(FIELDS[3], "soon"), /With one like April 12, 1991 Without one soon/);
-	assert.match(readTooltip(FIELDS[0], "your team"), /With one their company Without one your team/);
-	assert.match(readTooltip(FIELDS[1]), /With one their VIP tier/);
+test("without a fallback, the reader without one gets a gap, and the tooltip says how to fill it", () => {
+	const props = { field: FIELDS[2], fallback: "", before: "You have ", after: " points…" };
+	assert.equal(
+		readTooltip(props),
+		"Each reader's points Jane sees You have 1,250 points… No points You have points… Fill the gap: add | and a word inside the braces. Pick a reader in Preview to see it for real."
+	);
+	assert.match(renderTooltip(props), /You have <span class="[^"]*border-dashed[^"]*"><\/span> points…/);
+});
+
+test("its examples follow the field's type and name", () => {
+	assert.match(readTooltip({ field: FIELDS[3], fallback: "soon" }), /Each reader's birthday Jane sees April 12, 1991 No birthday soon/);
+	assert.match(readTooltip({ field: FIELDS[1], fallback: "gold" }), /Each reader's VIP tier A reader sees their VIP tier No VIP tier gold/);
+	assert.match(readTooltip({ field: FIRST_NAME, fallback: "a very long way to say hello to you" }), /“a very long way to say …” comes from/);
+});
+
+test("the examples quote a few words of the tag's sentence, up to another tag or a line break", () => {
+	const quote = (text, tag) => getTagContext(text, text.indexOf(tag), text.indexOf(tag) + tag.length);
+	assert.deepEqual(quote("Hey {{first_name|there}},", "{{first_name|there}}"), { before: "Hey ", after: "," });
+	assert.deepEqual(quote("Hi {{first_name}}, welcome to the list.", "{{first_name}}"), { before: "Hi ", after: ", welcome…" });
+	assert.deepEqual(quote("This week the whole crew at {{company}} gets early access.", "{{company}}"), { before: "…crew at ", after: " gets…" });
+	assert.deepEqual(quote("The seed swap. You have {{points}} points. See you", "{{points}}"), { before: "You have ", after: " points." });
+	assert.deepEqual(quote("Hey {{first_name}} {{plan}} plan", "{{first_name}}"), { before: "Hey ", after: "" });
+	assert.deepEqual(quote("Thanks\n{{first_name}}", "{{first_name}}"), { before: "", after: "" });
+	assert.deepEqual(quote("{{first_name}}", "{{first_name}}"), { before: "", after: "" });
 });

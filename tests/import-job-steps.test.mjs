@@ -52,9 +52,11 @@ function fakeStore({ chunks, total, failTimes = 0 }) {
 		},
 		hasChunk: async ({ index }) => Boolean(stored[index]),
 		queue: async (next) => queued.push(next),
+		announce: async () => announced.push(job.status),
 	};
 	const queued = [];
-	return { job, deps, written, queued, stored };
+	const announced = [];
+	return { job, deps, written, queued, stored, announced };
 }
 
 const jobRef = (index) => ({ accountId: ACCOUNT_ID, importId: IMPORT_ID, index });
@@ -69,6 +71,7 @@ describe("running an import's chunks", () => {
 		assert.equal(store.job.status, "done");
 		assert.equal(store.job.rows, 5);
 		assert.ok(store.stored.every((chunk) => chunk.rows === undefined), "processed chunks keep no rows");
+		assert.deepEqual(store.announced, ["done"], "its end is announced once, after the last chunk");
 	});
 
 	test("a second delivery of the same job finds nothing to do and adds nothing", async () => {
@@ -92,6 +95,7 @@ describe("running an import's chunks", () => {
 		const first = await runImport(jobRef(0), { now, deps: store.deps });
 		assert.deepEqual(first, { processed: 1, done: false, next: null }, "the rest of the file hasn't arrived");
 		assert.equal(store.job.status, "processing");
+		assert.deepEqual(store.announced, [], "nothing to announce before its end");
 		assert.deepEqual(await runImportChunk(jobRef(1), { now, deps: store.deps }), { waiting: true });
 		assert.equal(store.job.lockedUntil, undefined, "the chunk is free again");
 	});
@@ -117,6 +121,7 @@ describe("running an import's chunks", () => {
 		assert.equal(store.job.status, "failed");
 		assert.equal(store.job.error, "Part of the file couldn't be imported");
 		assert.deepEqual(store.written, []);
+		assert.deepEqual(store.announced, ["failed"], "only its last try announces it stopped");
 	});
 
 	test("an invalid job is skipped", async () => {

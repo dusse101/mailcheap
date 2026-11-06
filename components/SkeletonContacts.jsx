@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-const FILTER_WIDTHS = ["w-20", "w-16", "w-26", "w-22"];
+// Status, Signed up, Source and Tag.
+const FILTER_WIDTHS = ["w-20", "w-26", "w-22", "w-16"];
 const EMAIL_WIDTHS = [62, 48, 70, 54, 44, 66, 58, 50, 72, 46];
 
 // The contacts lists while they load: the search and the filters (FilterContacts), then a page (TableContacts).

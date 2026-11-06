@@ -77,6 +77,21 @@ describe("MailCheap Cloud", () => {
 		assert.equal(platformEmails.at(-2).headers, undefined, "an alert carries no code");
 	});
 
+	test("replies to an owner's urgent email reach URGENT_REPLY_TO, and every other email's still reach support", async () => {
+		const user = await signIn("urgent-owner@example.com");
+		await withEnv({ URGENT_REPLY_TO: "owner-help@example.com" }, async () => {
+			await m.alerts.sendAlert({ accountId: user.accountId, key: "urgent-block", title: "Blocked for the test", detail: "Blocked.", isUrgent: true });
+			await m.alerts.sendAlert({ accountId: user.accountId, key: "urgent-warning", title: "Warned for the test", detail: "Careful." });
+			await m.alerts.sendAlert({ accountId: null, key: "urgent-admins", title: "For the admins", detail: "Admins.", isUrgent: true });
+			assert.deepEqual(await requestCode("urgent-owner@example.com"), { email: "urgent-owner@example.com" });
+		});
+		const replyTo = (subject) => platformEmails.findLast((email) => email.subject === subject).reply_to;
+		assert.equal(replyTo("[MailCheap] Blocked for the test"), "owner-help@example.com");
+		assert.equal(replyTo("[MailCheap] Warned for the test"), "hello@mailcheap.ai", "a warning");
+		assert.equal(replyTo("[MailCheap] For the admins"), "hello@mailcheap.ai", "the admins' own alerts");
+		assert.equal(platformEmails.at(-1).reply_to, "hello@mailcheap.ai", "a sign-in code");
+	});
+
 	test("without RESEND_API_KEY nothing goes out: the cloud never falls back to the email provider", async () => {
 		const before = counts();
 		await withEnv({ RESEND_API_KEY: "" }, async () => {
@@ -132,6 +147,12 @@ describe("self-hosted server", () => {
 		assert.match(code.subject, CODE_SUBJECT);
 		assert.deepEqual(code.headers, { "OTP-Token": otpToken(code.subject) }, "SES carries the header too");
 		assert.deepEqual([alert.to, alert.subject], ["admin@example.com", "[MailCheap] Self-hosted alert"]);
+		assert.equal(alert.replyTo, null, "replies go to EMAIL_FROM");
+
+		await withEnv({ ...SELF_HOSTED, RESEND_API_KEY: "" }, () =>
+			m.platform.sendPlatformEmail({ to: "owner@example.com", subject: "Blocked", text: "Blocked.", replyTo: "owner-help@example.com" })
+		);
+		assert.equal(platformSent.at(-1).replyTo, "owner-help@example.com", "an urgent email's reply-to reaches SES too");
 	});
 
 	test("without it on PostShiba, a tenant of their own sends them once EMAIL_FROM's domain is verified there", async () => {

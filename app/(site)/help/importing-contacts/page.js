@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import FigureHelp from "@/components/FigureHelp";
 import LinkApp from "@/components/LinkApp";
 import { FIRST_SEND, isCloud } from "@/lib/config";
 import { MAX_CONTACT_FIELDS } from "@/lib/contact-fields";
@@ -19,7 +20,8 @@ export default function ImportingContactsPage() {
 			<h2 id="export">Export from your current platform</h2>
 			<p>
 				Substack, beehiiv, Mailchimp, Kit, Buttondown and most other platforms export subscribers as a CSV file. Then, on the{" "}
-				<LinkApp href="/contacts">Contacts page</LinkApp>, click Import contacts and choose the file, or drop it anywhere on the page.
+				<LinkApp href="/contacts">Contacts page</LinkApp>, click Add contacts, pick Import a CSV and choose the file, or drop it
+				anywhere on the page.
 				{isCloud() && " Importing needs a plan."}
 			</p>
 			{guides.length > 0 && (
@@ -71,6 +73,11 @@ export default function ImportingContactsPage() {
 				and fields), with the number of rows. Below, every column shows a few of its values and where they go, in plain words:
 				Email, First name, Status, Signup date, Tags, one of your fields, a new field, or Don&apos;t import.
 			</p>
+			<FigureHelp
+				src="/help/importing-contacts/check.webp"
+				alt="The import dialog: a beehiiv file's first contacts as they'll be in the list, then its columns."
+				caption="Checking a file before it's imported"
+			/>
 			<p>
 				Columns MailCheap recognized are folded under Recognized, still yours to change. Under Needs a look are the columns going
 				into a new field (each custom field, and where readers came from: beehiiv&apos;s acquisition source, channel, campaign and
@@ -95,6 +102,11 @@ export default function ImportingContactsPage() {
 				An import runs in the background, up to {MAX_IMPORT_ROWS.toLocaleString("en-US")} rows. Once the file is sent, which takes a
 				few seconds, you can close the window and keep working: the <LinkApp href="/contacts">Contacts page</LinkApp> shows how far
 				it is, then what it added, what was already there and what it left out, and why. A small file goes in at once.
+			</p>
+			<p>
+				The bell in the dashboard tells you when an import starts, then how it went once it&apos;s done or if it stopped, with a
+				link to the Contacts page, even after you&apos;ve left it.{" "}
+				<Link href={getHelpHref("notifications")}>Notifications</Link>
 			</p>
 			<p>
 				Through the API or an AI assistant, import_contacts takes 1,000 rows a call and answers right away; get_import shows the
@@ -123,6 +135,30 @@ export default function ImportingContactsPage() {
 			<p>
 				Contacts already in your list keep their status, unless the file gives a stricter one (unsubscribed, bounced or complained),
 				which is final. An import never sends welcome emails.
+			</p>
+
+			<h2 id="bring-back">Bringing some back</h2>
+			<p>
+				On the <LinkApp href="/contacts">Contacts page</LinkApp>, open Left out on the import to see each address it left out and why,
+				and search them. Role addresses and throwaway inboxes are left out because they complain and bounce more than personal
+				addresses, which hurts your deliverability, but people do sign up with them, like a business with its info@ address. Click
+				Bring back next to the ones you know signed up: each is added with what its row had, as the import would have.
+			</p>
+			<FigureHelp
+				src="/help/importing-contacts/left-out.webp"
+				alt="An import's Left out on the Contacts page: the count for each reason, then role addresses and throwaway inboxes, each with Bring back."
+				caption="What an import left out"
+			/>
+			<p>
+				The others stay out, since your emails wouldn&apos;t reach someone who wants them: misspelled domains, spam traps and spam
+				domains, domains that can&apos;t receive email, and people who unsubscribed, bounced or complained before. Invalid addresses,
+				duplicates and addresses MailCheap knows can&apos;t receive email are only counted. Bringing one back checks it again as
+				adding one contact does, so an address that can&apos;t receive email, or that unsubscribed since, still stays out.
+			</p>
+			<p>
+				The list stays 7 days after the import, and the import shows on the Contacts page for a day: importing the file again shows
+				it again, and contacts already in your list keep their status. Through the API or an AI assistant, list_left_out and
+				bring_back_contacts do the same.
 			</p>
 
 			<h2 id="after">After the import</h2>

@@ -21,6 +21,7 @@ import { getAccountPlan, isOnFreePlan } from "@/lib/plans";
 import { getPostalAddress } from "@/lib/postal-address";
 import { describePublishTo, isOnWebsite, sendsEmail } from "@/lib/publish-to";
 import { renderEmail } from "@/lib/render-email";
+import { withAllSections } from "@/lib/sections";
 import { serialize } from "@/lib/serialize";
 import { siteExtensions } from "@/lib/site-extensions";
 import { TIME_ZONE_COOKIE, resolveTimeZone } from "@/lib/time-zone";
@@ -48,10 +49,11 @@ export default async function AdminCampaignPage({ params }) {
 		cookies(),
 	]);
 	const timeZone = resolveTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value);
+	// Every section, whoever and wherever it's for: the content as its author wrote it.
 	const { html } = renderEmail({
 		format: campaign.format,
 		markdown: campaign.markdown,
-		html: campaign.html,
+		html: campaign.format === "rich" ? withAllSections(campaign.html) : campaign.html,
 		subject: campaign.subject,
 		previewText: campaign.previewText,
 		newsletter,

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import mongoose from "mongoose";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { ALERT_TYPES } from "../lib/alert-kinds.js";
 import { ALERT_OCCURRENCES_KEPT, getAlertType, maskEmails } from "../lib/alert-rules.js";
 import { activate, as, catchNotFound, signIn, startTestApp } from "./helpers/app.mjs";
@@ -177,6 +179,79 @@ test("a blocked account can be dismissed too, and a new block brings it back", a
 	await wait(5);
 	await as(admin, () => m.actions.blockAccountAction(accountId, "Spam again"));
 	assert.ok(ids((await m.stats.listAttention()).blockedAccounts).includes(accountId), "a new block is a new item");
+});
+
+test("a customer who can't send comes first, however many alerts came since, and their paused campaign isn't listed again", async () => {
+	const { insertedId } = await mongoose.connection.db.collection("campaigns").insertOne({
+		accountId: customer.accountId,
+		newsletterId: new mongoose.Types.ObjectId(),
+		subject: "Refused by the provider",
+		status: "paused",
+		pauseReason: "PostShiba inject: 550 domain_suspended",
+		updatedAt: new Date(),
+	});
+	await m.alerts.sendAlert({
+		key: `customer-blocked:${insertedId}`,
+		title: "A paying customer can't send",
+		detail: "Letter (letter.example.com, Growth plan): PostShiba refuses its emails (domain_suspended). Its campaign paused with 3 emails waiting.",
+	});
+	await wait(5);
+	for (let index = 0; index < 12; index++) await m.alerts.sendAlert({ key: `qstash-refused:${index}`, title: "QStash refused a job", detail: "Quota." });
+
+	const attention = await m.stats.listAttention({ limit: 10 });
+	const blocked = attention.blockedSends.find(({ title, ownerEmail }) => title === "A paying customer can't send" && ownerEmail === "customer@example.com");
+	assert.equal(blocked.detail, "Letter (letter.example.com, Growth plan): the email provider refuses its emails (domain_suspended). Its campaign paused with 3 emails waiting.");
+	assert.equal(attention.alerts.length, 10, "the other alerts are cut at the limit");
+	assert.equal(ids(attention.alerts).includes(blocked.id), false);
+	assert.equal(ids(attention.pausedCampaigns).includes(String(insertedId)), false, "listed once, as the customer who can't send");
+
+	assert.deepEqual(await as(admin, () => m.actions.dismissAttentionAction("alert", blocked.id)), { ok: true });
+	const after = await m.stats.listAttention();
+	assert.equal(ids(after.blockedSends).includes(blocked.id), false);
+	assert.equal(ids(after.pausedCampaigns).includes(String(insertedId)), false, "dismissing it doesn't bring the campaign back");
+});
+
+test("blocked accounts with a plan come first, marked, then the others", async () => {
+	const paying = await signIn("blocked-paying@example.com");
+	await activate(paying, { plan: "pro" });
+	const free = await signIn("blocked-free@example.com");
+	for (const user of [paying, free]) assert.deepEqual(await as(admin, () => m.actions.blockAccountAction(String(user.accountId), "Spam")), { ok: true });
+	const { blockedAccounts } = await m.stats.listAttention();
+	const marks = blockedAccounts.map(({ ownerEmail, plan, hasPlan }) => [ownerEmail, plan, hasPlan]);
+	assert.deepEqual(
+		marks.filter(([ownerEmail]) => ownerEmail.startsWith("blocked-")),
+		[
+			["blocked-paying@example.com", "Pro", true],
+			["blocked-free@example.com", null, false],
+		]
+	);
+	assert.ok(marks.findIndex(([, , hasPlan]) => !hasPlan) > marks.findLastIndex(([, , hasPlan]) => hasPlan), "with a plan first");
+});
+
+test("Needs a look shows customers who can't send and blocked accounts with a plan first, in red", async () => {
+	const ListAttention = (await import("../components/ListAttention.jsx")).default;
+	const at = new Date().toISOString();
+	const attention = {
+		blockedSends: [{ kind: "alert", id: "a1", title: "A paying customer can't send", ownerEmail: "jane@example.com", detail: "Letter (letter.example.com, Growth plan): refused.", at }],
+		blockedAccounts: [
+			{ kind: "account", id: "b1", ownerEmail: "paid@example.com", by: "campaign", reason: "Bounce rate of 6.00%", at, plan: "Pro", hasPlan: true },
+			{ kind: "account", id: "b2", ownerEmail: "free@example.com", by: "admin", reason: "Spam", at, plan: null, hasPlan: false },
+		],
+		pausedCampaigns: [{ kind: "campaign", id: "c1", subject: "Paused issue", ownerEmail: "jane@example.com", reason: "Too many bounces", at }],
+		alerts: [],
+		dismissed: [],
+	};
+	const html = renderToStaticMarkup(createElement(ListAttention, { attention, now: Date.now() }));
+	const titles = [...html.matchAll(/<span class="block truncate text-sm font-medium( text-red-600 dark:text-red-400)?">([^<]+)<\/span>/g)].map(([, red, title]) => [title, Boolean(red)]);
+	assert.deepEqual(titles, [
+		["A paying customer can&#x27;t send", true],
+		["paid@example.com", true],
+		["free@example.com", false],
+		["Paused issue", false],
+	]);
+	assert.match(html, /lucide-mail-x/);
+	assert.match(html, /jane@example\.com · Letter \(letter\.example\.com, Growth plan\): refused\./);
+	assert.match(html, /Pro plan · Blocked by a campaign&#x27;s rates: Bounce rate of 6\.00%/);
 });
 
 test("dismiss all like this sets aside every alert of the kind and nothing else", async () => {
