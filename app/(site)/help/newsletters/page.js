@@ -4,6 +4,7 @@ import LinkApp from "@/components/LinkApp";
 import { CLEANUP_LIMITS, getCleanupDefaults } from "@/lib/cleanup";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
 import { CONFIRMATION_RESENDS } from "@/lib/confirmation";
+import { CONFIRMATION_REMINDER_AFTER_HOURS } from "@/lib/confirmation-reminder-rules";
 import { formatWindow } from "@/lib/format";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { INBOX_CHECK_LIMIT } from "@/lib/inbox-check";
@@ -86,13 +87,19 @@ export default function NewslettersPage() {
 			<h2 id="confirm-signups">Confirm new signups</h2>
 			<p>
 				With confirmed opt-in, people who sign up get an email with a button, and only join your list once they click it. Until then
-				they&apos;re pending and get nothing else. It&apos;s on for new newsletters, and it keeps typos and fake signups out of your
+				they&apos;re pending and get no issues. It&apos;s on for new newsletters, and it keeps typos and fake signups out of your
 				list.
 			</p>
 			<p>
 				Someone pending who signs up again gets the email again, {CONFIRMATION_RESENDS.waitMinutes} minutes after the last one and up
 				to {CONFIRMATION_RESENDS.perDay} times a day, so nobody waits for a link that never comes and a script can&apos;t flood an
 				inbox. So does someone who unsubscribed and signs up again on your website.
+			</p>
+			<p>
+				A server can also send one reminder, about {CONFIRMATION_REMINDER_AFTER_HOURS} hours after someone signs up, and then
+				stop. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
+				moment. People already waiting are left as they are. A confirmation email sent again restarts the wait, so the reminder
+				does not arrive next to it. Someone who confirmed, unsubscribed, bounced or complained gets none.
 			</p>
 			<p>
 				The built-in confirmation email follows your newsletter&apos;s name and description. On the{" "}
