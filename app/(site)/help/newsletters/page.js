@@ -100,6 +100,8 @@ export default function NewslettersPage() {
 				stop. It stays off until that server turns it on for the newsletter, and it only includes people who sign up after that
 				moment. People already waiting are left as they are. A confirmation email sent again restarts the wait, so the reminder
 				does not arrive next to it. Someone who confirmed, unsubscribed, bounced or complained gets none.
+				The confirmation email has an unsubscribe link like any other. Someone who uses it while they&apos;re pending becomes
+				unsubscribed, and the old confirmation button no longer adds them.
 			</p>
 			<p>
 				The built-in confirmation email follows your newsletter&apos;s name and description. On the{" "}

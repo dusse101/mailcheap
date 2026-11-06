@@ -18,7 +18,7 @@ export function generateMetadata() {
 	};
 }
 
-const SUBSCRIBED_STATUSES = ["active", "dormant"];
+const SUBSCRIBED_STATUSES = ["active", "dormant", "pending"];
 
 export default async function UnsubscribePage({ searchParams }) {
 	const { token, status } = await searchParams;
