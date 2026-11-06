@@ -103,8 +103,8 @@ test("campaigns are injected with the account and message in unique args, our un
 });
 
 test("a send's issues and last-chance emails go on the bulk cluster, signup and test emails on the transactional one", () => {
-	const kinds = ["campaign", "last-chance", "welcome", "confirmation", "test"];
-	assert.deepEqual(kinds.map(isBulkKind), [true, true, false, false, false]);
+	const kinds = ["campaign", "last-chance", "welcome", "confirmation", "confirmation-reminder", "test"];
+	assert.deepEqual(kinds.map(isBulkKind), [true, true, false, false, false, false]);
 });
 
 test("transactional emails go to POST /sends for the tenant", () => {

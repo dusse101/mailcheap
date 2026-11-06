@@ -17,7 +17,7 @@ export const MESSAGE_STATUSES = [
 
 const messageSchema = new mongoose.Schema(
 	{
-		kind: { type: String, enum: ["campaign", "last-chance", "welcome", "confirmation", "test"], required: true },
+		kind: { type: String, enum: ["campaign", "last-chance", "welcome", "confirmation", "confirmation-reminder", "test"], required: true },
 		campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
 		newsletterId: { type: mongoose.Schema.Types.ObjectId, ref: "Newsletter", required: true },
 		contactId: { type: mongoose.Schema.Types.ObjectId, ref: "Contact" },
@@ -26,6 +26,10 @@ const messageSchema = new mongoose.Schema(
 		status: { type: String, enum: MESSAGE_STATUSES, default: "queued" },
 		// The contact had never received an email from this account (lib/first-send.js).
 		firstSend: { type: Boolean },
+		// Fork: the pending cycle (subscribedAt) a confirmation reminder belongs to. One reminder per cycle.
+		cycleAt: { type: Date },
+		// Fork: failed sends of a confirmation reminder. It stops after a few (lib/confirmation-reminder-rules.js).
+		attempts: { type: Number },
 		// A Gmail reader a new domain sends on a later day: not before then (lib/sending.js markSendAfter).
 		sendAfter: { type: Date },
 		// The email provider's id for it, when the send returns one; else the first event fills it in.
@@ -58,6 +62,11 @@ messageSchema.index({ providerMessageId: 1 }, { sparse: true });
 // A contact's emails, newest first (lib/contact-emails.js), and the checks on its welcome and confirmation emails.
 messageSchema.index({ contactId: 1, _id: -1 });
 messageSchema.index({ kind: 1, createdAt: -1 });
+// One confirmation reminder per pending cycle, including when two hourly runs overlap.
+messageSchema.index(
+	{ contactId: 1, cycleAt: 1 },
+	{ unique: true, partialFilterExpression: { kind: "confirmation-reminder" } }
+);
 // The overview's emails sent per hour.
 messageSchema.index({ newsletterId: 1, sentAt: 1 });
 messageSchema.index({ campaignId: 1, status: 1 });

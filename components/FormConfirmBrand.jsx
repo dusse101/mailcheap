@@ -37,7 +37,7 @@ export default function FormConfirmBrand({ brand, token, fromEmail, outcome = "f
 				</form>
 			</BrandActions>
 			<p className="tt-fine tt-after">
-				Didn&apos;t sign up? Close this page and you won&apos;t hear from us.
+				Didn&apos;t sign up? Close this page and you stay off the list.
 			</p>
 		</PageBrand>
 	);
