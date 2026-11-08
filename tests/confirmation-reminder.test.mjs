@@ -139,11 +139,11 @@ test("the brand's reminder is its own copy, exactly, and repaints the button", a
 			content.markdown,
 			`**So close.**
 
-Your Taco & Tell signup is one button short, and you're not on the list until you confirm. It takes less time than a red light on 380.
+Your Taco & Tell signup isn’t confirmed yet. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser. It takes less time than a red light on 380.
 
-<a href="${CONFIRM_URL_PLACEHOLDER}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;">Confirm my subscription</a>
+<a href="${CONFIRM_URL_PLACEHOLDER}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;">Open my confirmation page</a>
 
-Didn't sign up? Ignore this. You stay off the list, and this is the last nudge you'll get from us.`
+Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge you’ll get from us.`
 		);
 		const email = renderEmail({
 			...content,
@@ -151,8 +151,30 @@ Didn't sign up? Ignore this. You stay off the list, and this is the last nudge y
 			newsletter: { name: "Taco & Tell", postalAddress: "1 Main St" },
 			unsubscribeUrl: "https://mailcheap.test/unsubscribe?token=example",
 		});
+		const visible = `So close.
+
+Your Taco & Tell signup isn’t confirmed yet. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser. It takes less time than a red light on 380.
+
+Open my confirmation page (${CONFIRM_URL_PLACEHOLDER})
+
+Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge you’ll get from us.`;
+		assert.ok(email.text.startsWith(`${visible}\n\n`), email.text);
+		assert.match(email.text, /You're not on the list until you confirm\./, "the footer is unchanged");
+		assert.match(email.html, /<p><strong>So close\.<\/strong><\/p>/);
+		assert.match(
+			email.html,
+			/<p>Your Taco &amp; Tell signup isn’t confirmed yet\. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser\. It takes less time than a red light on 380\.<\/p>/
+		);
+		assert.match(email.html, /<a href="\{\{confirm_url\}\}"[^>]*>Open my confirmation page<\/a>/);
+		assert.match(email.html, /<p>Didn’t sign up\? Ignore this\. You stay off the list, and this is the last nudge you’ll get from us\.<\/p>/);
+		assert.match(email.html, /<title>Your Taco &amp; Tell signup is still on the porch<\/title>/);
+		assert.match(email.html, /data-preheader>You&#39;re not on the list until you confirm\. This is the only reminder\./);
 		assert.match(email.html, /bgcolor="#d63a55"/, "the brand's button color");
 		assert.equal(email.html.includes("#18181b"), false, "not the stock one");
+		for (const part of [content.markdown, email.html, email.text]) {
+			assert.equal(/one button short/i.test(part), false);
+			assert.equal(part.includes("Confirm my subscription"), false);
+		}
 	});
 });
 
