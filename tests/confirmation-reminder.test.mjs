@@ -240,12 +240,12 @@ test("who the backfill can reach", () => {
 	);
 });
 
-test("vercel.json runs only the isolated reminder route, daily at 6:00 in Chicago", () => {
+test("vercel.json runs only the isolated reminder route, daily at 7:00 in Chicago", () => {
 	const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 	assert.equal(config.crons, undefined, "a crons entry would run in UTC, and run the route a second time");
 	assert.deepEqual(config.schedules, {
 		"confirmation-reminders": {
-			schedule: "0 6 * * *",
+			schedule: "0 7 * * *",
 			timezone: "America/Chicago",
 			path: "/api/cron/confirmation-reminders",
 			// Schedules default to POST, and withCronSecret only exports GET.
@@ -260,15 +260,15 @@ test("the daily route's only imports are the reminder and the secret check", () 
 	assert.deepEqual([...source.matchAll(/from "([^"]+)"/g)].map(([, from]) => from).sort(), ["@/lib/confirmation-reminder", "@/lib/cron"]);
 });
 
-test("a run at about 6:00 in Chicago always falls inside the reminder window, across daylight saving", () => {
+test("a run at about 7:00 in Chicago always falls inside the reminder window, across daylight saving", () => {
 	const HOUR_MS = 60 * 60 * 1000;
 	const chicagoHour = (at) =>
 		new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(at);
-	// 6:00 in Chicago is 11:00 UTC in summer and 12:00 UTC in winter. Each run starts as late or as early as the 15 minute jitter allows.
+	// 7:00 in Chicago is 12:00 UTC in summer and 13:00 UTC in winter. Each run starts as late or as early as the 15 minute jitter allows.
 	const runs = [];
 	for (let day = 0; day < 400; day++) {
 		const midnight = Date.UTC(2026, 0, 1 + day);
-		const start = [11, 12].map((hour) => midnight + hour * HOUR_MS).find((at) => chicagoHour(at) === "6");
+		const start = [12, 13].map((hour) => midnight + hour * HOUR_MS).find((at) => chicagoHour(at) === "7");
 		runs.push(start + (day % 2 ? 15 * 60 * 1000 : 0));
 	}
 	const fewest = (start) => runs.filter((at) => at >= start && at < start + CONFIRMATION_REMINDER_GRACE_MS).length;
