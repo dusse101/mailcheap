@@ -33,7 +33,11 @@ export default function ContactsPage() {
 					</tr>
 					<tr>
 						<td>Pending</td>
-						<td>Signed up and hasn&apos;t clicked the confirmation email yet. Gets nothing else until then.</td>
+						<td>
+							Signed up and hasn&apos;t clicked the confirmation email yet. Gets no issues until then.{" "}
+							<Link href={getHelpHref("newsletters", "confirm-signups")}>One reminder</Link> can go out a day or two later, and
+							only when the server has turned it on.
+						</td>
 					</tr>
 					<tr>
 						<td>Dormant</td>

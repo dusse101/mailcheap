@@ -121,6 +121,13 @@ test("confirmation and campaign footers say what the kind is, with an unsubscrib
 		assert.equal(/you subscribed/i.test(confirmation.text), false);
 		assert.equal(confirmation.html.includes("Past issues"), false);
 
+		const reminder = renderEmail({ ...base, kind: "confirmation-reminder" });
+		assert.match(reminder.html, /not on the list until you confirm/);
+		assert.match(reminder.text, /not on the list until you confirm/);
+		assert.equal(reminder.html.includes("Past issues"), false);
+		assert.equal(/every Thursday morning/.test(reminder.html), false);
+		assert.equal(/every Thursday morning/.test(reminder.text), false);
+
 		const campaign = renderEmail({ ...base, kind: "campaign" });
 		assert.match(campaign.html, /signed up/);
 		assert.match(campaign.text, /signed up/);

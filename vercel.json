@@ -1,0 +1,11 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"schedules": {
+		"confirmation-reminders": {
+			"schedule": "0 7 * * *",
+			"timezone": "America/Chicago",
+			"path": "/api/cron/confirmation-reminders",
+			"requestMethod": "GET"
+		}
+	}
+}

@@ -609,7 +609,12 @@ const UNSENT_REASONS = {
 	skipped: "This month's emails were used up",
 };
 
-const KIND_LABELS = { welcome: "Welcome email", confirmation: "Confirmation email", "last-chance": "Last-chance email" };
+const KIND_LABELS = {
+	welcome: "Welcome email",
+	confirmation: "Confirmation email",
+	"confirmation-reminder": "Confirmation reminder",
+	"last-chance": "Last-chance email",
+};
 
 const JOIN_TITLES = {
 	website: "Signed up on your website",

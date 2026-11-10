@@ -7,8 +7,9 @@ import Campaign from "@/models/Campaign";
 import Message from "@/models/Message";
 
 const NO_STORE = { "Cache-Control": "no-store" };
-// Bounced and complained contacts stay as they are: those statuses also block sending.
-const SUBSCRIBED_STATUSES = ["active", "dormant"];
+// Bounced and complained contacts stay as they are: those statuses also block sending. Fork: pending can leave too, or
+// the page says they're out while nothing records it.
+const SUBSCRIBED_STATUSES = ["active", "dormant", "pending"];
 const RECENT_CAMPAIGNS = 5;
 // Gmail and Yahoo send one-click requests from shared mail servers, so keep this generous.
 const RATE_LIMIT = { name: "unsubscribe", limit: 60, window: "1 m" };

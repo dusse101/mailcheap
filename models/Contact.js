@@ -34,6 +34,14 @@ const contactSchema = new mongoose.Schema(
 		confirmedAt: { type: Date },
 		// Fork: when the confirm page first showed this pending contact its button. Signing up again starts it over.
 		confirmOpenedAt: { type: Date },
+		// Fork: the one confirmation reminder for this pending cycle (lib/confirmation-reminder.js). cycleAt is the
+		// subscribedAt of that cycle, so a later signup after leaving can be reminded once of its own.
+		confirmationReminder: {
+			cycleAt: { type: Date },
+			state: { type: String, enum: ["claimed", "sent", "skipped", "retry"] },
+			claimedAt: { type: Date },
+			messageId: { type: mongoose.Schema.Types.ObjectId },
+		},
 		unsubscribedAt: { type: Date },
 		lastSentAt: { type: Date },
 		lastOpenAt: { type: Date },

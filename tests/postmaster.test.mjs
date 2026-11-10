@@ -135,7 +135,7 @@ describe("Feedback-ID", () => {
 	});
 
 	test("in Gmail's format: four fields, none repeated, none with a colon, none naming a message or a person", () => {
-		for (const kind of ["campaign", "last-chance", "welcome", "confirmation", "test"]) {
+		for (const kind of ["campaign", "last-chance", "welcome", "confirmation", "confirmation-reminder", "test"]) {
 			const fields = getFeedbackId({ accountId: ACCOUNT_ID, newsletterId: NEWSLETTER_ID, campaignId: kind === "welcome" ? undefined : CAMPAIGN_ID, kind }).split(":");
 			assert.equal(fields.length, 4, kind);
 			assert.equal(fields.at(-1), "mailcheap", "the sender ID Google asks for, 5 to 15 characters, the same on every email");
