@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { getFirstSendProblem, getFirstSendSteps } from "../lib/first-send.js";
-import { activate, as, catchRedirect, endSenderWarmup, form, jsonRequest, platformEmails, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addAuthor, as, catchRedirect, endSenderWarmup, form, jsonRequest, platformEmails, signIn, startTestApp } from "./helpers/app.mjs";
 import { published } from "./stubs/qstash.mjs";
 
 test("new contacts go 2% first, then 5% more, then the rest, each step within its bounds", () => {
@@ -17,7 +17,11 @@ test("new contacts go 2% first, then 5% more, then the rest, each step within it
 
 test("new contacts over a campaign's levels stop the rest", () => {
 	assert.equal(getFirstSendProblem({ sent: 240, bounced: 6 }), null, "2.5% is the pause limit");
-	assert.deepEqual(getFirstSendProblem({ sent: 240, bounced: 7 }), { level: "pause", reason: "The first 240 new contacts had a bounce rate of 2.92% (limit 2.50%)" });
+	assert.deepEqual(getFirstSendProblem({ sent: 240, bounced: 7 }), {
+		level: "pause",
+		metric: "bounce",
+		reason: "The first 240 new contacts had a bounce rate of 2.92% (limit 2.50%)",
+	});
 	assert.equal(getFirstSendProblem({ sent: 2000, complained: 2 }).level, "pause");
 	assert.equal(getFirstSendProblem({ sent: 2000, complained: 1 }), null, "one complaint");
 	assert.equal(getFirstSendProblem({ sent: 0 }), null);
@@ -51,6 +55,7 @@ describe("first sends in steps", () => {
 		const slug = email.split("@")[0];
 		const url = await as(user, () => catchRedirect(m.newsletters.saveNewsletter(null, form({ name: slug, slug, postalAddress: "1 Main St" }))));
 		user.newsletterId = url.split("/").at(-1);
+		await addAuthor(user);
 		// From a domain Gmail already knows, so only the steps hold contacts back (tests/send-spread.test.mjs holds Gmail's).
 		await endSenderWarmup(user);
 		const contact = (index, lastSentAt) => ({

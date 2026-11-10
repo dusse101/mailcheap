@@ -185,13 +185,15 @@ serial("a pending contact gets one reminder at 24 hours, and not before, after a
 	assert.equal(listed.status, 200, JSON.stringify(listed.body));
 	assert.ok(listed.body.emails.some((email) => email.kind === CONFIRMATION_REMINDER_KIND));
 
-	const original = sesEmails.find((message) => message.to === "due@example.org" && message.subject.startsWith("Confirm "));
 	const reminder = remindersTo("due@example.org", before)[0];
 	const reminderToken = tokenOf(reminder);
 	assert.ok(verifyConfirmToken(reminderToken));
-	assert.notEqual(reminderToken, tokenOf(original));
 	const stamped = JSON.parse(Buffer.from(reminderToken.split(".")[0], "base64url").toString());
+	const confirmation = await m.Message.findOne({ accountId: user.accountId, contactId: due._id, kind: "confirmation" }).lean();
+	// The token's time is the sending message's createdAt, to the second, so a reminder minted in the same second as
+	// the confirmation email carries the same token. It still has to be a new link, not that email's stored one.
 	assert.ok(Math.abs(stamped.t * 1000 - Date.now()) < 60_000, "the reminder mints its own link");
+	assert.ok(Math.abs(stamped.t * 1000 - new Date(confirmation.createdAt).getTime()) > 60_000);
 	assert.match(reminder.subject, /^Reminder: confirm your subscription to remind-window news$/);
 	assert.match(reminder.text, /only reminder/);
 	assert.equal(/best tacos/i.test(reminder.text), false);

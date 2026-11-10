@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import FormConfirm from "../components/FormConfirm.jsx";
 import { CONFIRM_URL_PLACEHOLDER, getConfirmationContent, getConfirmationProblem, isDefaultConfirmation } from "../lib/confirmation-content.js";
 import { createConfirmToken, verifyConfirmToken } from "../lib/confirmation.js";
 import { getInbox } from "../lib/inbox-links.js";
@@ -35,6 +38,16 @@ test("a confirmation link names one contact and stops working after 30 days", ()
 test("unsubscribe and confirmation links can't stand in for each other", () => {
 	assert.equal(verifyConfirmToken(createUnsubscribeToken(REFERENCE)), null);
 	assert.equal(verifyUnsubscribeToken(createConfirmToken(REFERENCE)), null);
+});
+
+// The link never confirms by itself. The button posts to /api/confirm; the page does not run a script that confirms.
+test("the confirm page posts to /api/confirm only when its button is pressed", () => {
+	const html = renderToStaticMarkup(createElement(FormConfirm, { token: "abc", newsletterName: "Field notes", fromEmail: "hi@example.com" }));
+	assert.match(html, /<form\b[^>]*method="post"/);
+	assert.match(html, /action="\/api\/confirm"/);
+	assert.match(html, /name="token" value="abc"/);
+	assert.match(html, /<button[^>]*type="submit"[^>]*>Confirm my subscription<\/button>/);
+	assert.doesNotMatch(html, /<script/);
 });
 
 test("the confirmation email carries a clean link in both versions", () => {
