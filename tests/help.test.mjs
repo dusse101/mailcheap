@@ -3,9 +3,11 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createElement } from "react";
+import { Fragment, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import sharp from "sharp";
 import NoticePace from "../components/NoticePace.jsx";
+import { getArticleSections } from "../lib/article-sections.js";
 import { HELP_ARTICLES, getHelpArticles } from "../lib/help.js";
 import { listAppPages } from "./helpers/app-pages.mjs";
 
@@ -67,9 +69,31 @@ test("every link into the help center opens one of its articles, at a section th
 	}
 });
 
+test("every screenshot is a 1600×1000 WebP in its article's folder of public/help, with its alt and caption, and none is left over", async () => {
+	const figures = [];
+	for (const { slug } of HELP_ARTICLES) {
+		const page = await readSource(`${HELP_DIR}/${slug}/page.js`);
+		for (const [tag] of page.matchAll(/<FigureHelp\b[^>]*\/>/g)) {
+			figures.push({ slug, ...Object.fromEntries([...tag.matchAll(/(\w+)="([^"]*)"/g)].map(([, name, value]) => [name, value])) });
+		}
+	}
+	assert.ok(figures.length > 0);
+	for (const { slug, src, alt, caption } of figures) {
+		assert.match(src, new RegExp(`^/help/${slug}/[a-z-]+\\.webp$`), `${slug}: ${src}`);
+		assert.ok(alt?.endsWith("."), `${src}: its alt is a sentence`);
+		assert.ok(caption, `${src}: it has a caption`);
+		const { format, width, height } = await sharp(join(ROOT, "public", src)).metadata();
+		assert.deepEqual({ format, width, height }, { format: "webp", width: 1600, height: 1000 }, src);
+	}
+	const files = (await readdir(join(ROOT, "public/help"), { recursive: true })).filter((file) => /\.\w+$/.test(file));
+	assert.deepEqual(files.map((file) => `/help/${file}`).sort(), figures.map(({ src }) => src).sort(), "each image in public/help shows once");
+});
+
 test("every list of the contact fields, and the dialog that makes them, links to how to add them", async () => {
-	const lists = ["components/MenuSlash.jsx", "components/FormCampaign.jsx", "components/PickerReader.jsx", "components/DialogContactFields.jsx"];
+	const lists = ["components/FormCampaign.jsx", "components/PickerReader.jsx", "components/DialogContactFields.jsx"];
 	for (const file of lists) assert.match(await readSource(file), /<LinkHelpFields\b/, file);
+	assert.match(await readSource("components/MenuSlash.jsx"), /<ChipAddField\b/, "the slash menu's end on Add a field");
+	assert.match(await readSource("components/EditorRich.jsx"), /<DialogContactFields\b/, "which opens the dialog");
 	const dialog = await readSource("components/DialogContactFields.jsx");
 	assert.match(dialog, /between\s+double\s+braces/, "the dialog says how an email prints a field");
 	assert.match(dialog, /<ButtonMergeTag tag=\{fieldTag\(field\.key\)\}/, "and shows each field's own, to copy");
@@ -164,4 +188,40 @@ test("from a new domain, the notice says how many Gmail readers get a send today
 	assert.match(backingOff, /Gmail gets it again in 4 hours: 300 of your Gmail readers that day\./);
 	assert.match(backingOff, /Next: the other 700 over the next 2 days\./);
 	assert.match(backingOff, /href="\/help\/warm-up#gmail"/);
+});
+
+test("an article's sections are its h2s with an id, in order, through fragments and plain elements", () => {
+	const Card = () => createElement("h2", { id: "in-a-component" }, "Unknown before it renders");
+	const children = [
+		createElement("h2", { id: "website" }, "Your newsletter", "\u2019", "s website"),
+		createElement("p", null, "Each newsletter has a website."),
+		createElement("h2", null, "No id, no link"),
+		false,
+		createElement(Fragment, null, createElement("h2", { id: "sign-in" }, "Signing in with ", createElement("code", null, "a code"))),
+		createElement("div", null, createElement("h2", { id: "restore" }, "Restoring it")),
+		createElement(Card),
+	];
+	assert.deepEqual(getArticleSections(children), [
+		{ id: "website", title: "Your newsletter\u2019s website" },
+		{ id: "sign-in", title: "Signing in with a code" },
+		{ id: "restore", title: "Restoring it" },
+	]);
+});
+
+test("on wide screens, an article of 4 sections or more lists them beside it, each linking to its heading", async () => {
+	let listed = 0;
+	for (const { slug } of getHelpArticles()) {
+		const { default: Page } = await import(`../${HELP_DIR}/${slug}/page.js`);
+		const html = renderToStaticMarkup(await Page());
+		const headings = [...html.matchAll(/<h2 id="([^"]+)"/g)].map(([, id]) => id);
+		const contents = html.match(/<nav aria-label="On this page".*?<\/nav>/s)?.[0];
+		if (headings.length < 4) {
+			assert.equal(contents, undefined, `${slug}: ${headings.length} sections need no list`);
+			continue;
+		}
+		listed += 1;
+		assert.deepEqual([...contents.matchAll(/href="#([^"]+)"/g)].map(([, id]) => id), headings, slug);
+		assert.equal(contents.match(/aria-current="location"/g)?.length, 1, `${slug}: one section is marked`);
+	}
+	assert.ok(listed >= 10, `most articles list their sections (${listed})`);
 });

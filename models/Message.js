@@ -43,6 +43,11 @@ const messageSchema = new mongoose.Schema(
 		clickedLinks: { type: [String], default: undefined },
 		bouncedAt: Date,
 		complainedAt: Date,
+		// Gmail refused it as likely unsolicited (lib/email-event-rules.js): it stays sent, and counts against its send.
+		refusedAt: Date,
+		// They unsubscribed through it: the latest issue they got, for an unsubscribe link or their mail app's button
+		// (app/api/unsubscribe), or the email the provider's own unsubscribe names (lib/email-events.js).
+		unsubscribedAt: Date,
 	},
 	{ timestamps: true }
 );
@@ -69,10 +74,14 @@ messageSchema.index(
 );
 // The overview's emails sent per hour.
 messageSchema.index({ newsletterId: 1, sentAt: 1 });
+// A newsletter's welcome emails over the overview's period, up to two years, without reading every account's.
+messageSchema.index({ newsletterId: 1, createdAt: 1 }, { partialFilterExpression: { kind: "welcome" } });
 messageSchema.index({ campaignId: 1, status: 1 });
 // Emails still waiting to go out, which the plan check counts before a new send.
 messageSchema.index({ accountId: 1, campaignId: 1 }, { partialFilterExpression: { status: "queued" } });
 // The account-level check on the last days of sends (lib/account-health.js).
 messageSchema.index({ accountId: 1, sentAt: -1 });
+// The addresses outside the team an account's tests reached in the last day (lib/test-recipients.js).
+messageSchema.index({ accountId: 1, createdAt: -1 }, { partialFilterExpression: { kind: "test" } });
 
 export default mongoose.models.Message || mongoose.model("Message", messageSchema);

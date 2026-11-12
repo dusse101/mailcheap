@@ -19,7 +19,7 @@ import { getPresendChecks } from "../lib/presend-checks.js";
 import { findButtonProblem, hasContent, renderEmail } from "../lib/render-email.js";
 import { getPublishProblem, getSendProblem } from "../lib/sending-rules.js";
 import { addTracking } from "../lib/tracking.js";
-import { activate, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addAuthor, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 
 process.env.BETTER_AUTH_SECRET = "test-session-secret-with-at-least-32-characters";
 process.env.APP_URL = "https://mail.example.com";
@@ -31,7 +31,7 @@ function button(text, href, align) {
 }
 
 function emailBody(html) {
-	return /<td class="body">([\s\S]*?)<\/td><\/tr>\n<tr><td style="padding:32px/.exec(html)?.[1];
+	return /<td class="body">([\s\S]*?)<\/td><\/tr>\n<tr><td class="email-muted email-rule" style="padding:32px/.exec(html)?.[1];
 }
 
 function render(html, theme) {
@@ -53,6 +53,18 @@ describe("what an issue keeps of a button", () => {
 		}
 		assert.equal(cleanRichHtml(button("x", "javascript:alert(1)")), button("x"), "a link that could run goes, the button stays");
 		assert.equal(cleanRichHtml(button("Hi", STORY, "left")), button("Hi", STORY, "left"), "the editor's own markup stays as it is");
+	});
+
+	test("a button or a link keeps the link MailCheap fills in for each reader of the confirmation and last-chance emails, and nothing like it", () => {
+		for (const href of ["{{confirm_url}}", "{{keep_url}}"]) {
+			assert.equal(cleanRichHtml(button("Yes", href)), button("Yes", href), href);
+			assert.equal(cleanRichHtml(`<p><a href="${href}">Yes</a></p>`), `<p><a href="${href}">Yes</a></p>`, `${href} in a link`);
+			assert.ok(emailBody(render(button("Yes", href)).html).includes(`<a href="${href}" style="display:inline-block;`), `${href} drawn as a button`);
+			assert.equal(findButtonProblem(button("Yes", href)), null);
+		}
+		for (const href of ["{{first_name}}", "{{confirm_url}}x", "{{unsubscribe_url}}", "javascript:{{keep_url}}"]) {
+			assert.equal(cleanRichHtml(button("Yes", href)), button("Yes"), href);
+		}
 	});
 
 	test("the website sanitizes it to the same markup, which its styles draw as a button", () => {
@@ -165,7 +177,7 @@ describe("buttons in emails", () => {
 	test("an email draws a button in the newsletter's button colors and corners, where it sits in the column", () => {
 		const plain = emailBody(render(`<p>Intro</p>${button("Read the full story", STORY)}<p>Outro</p>`).html);
 		assert.match(plain, /^<p>Intro<\/p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;"><tr><td align="center"><table role="presentation" align="center"/);
-		assert.match(plain, /<td align="center" bgcolor="#18181b" style="border-radius:8px;background:#18181b;mso-padding-alt:12px 24px;"><a href="https:\/\/example\.com\/story" style="display:inline-block;padding:12px 24px;border-radius:8px;background:#18181b;color:#ffffff;font-family:-apple-system,[^"]*;font-size:16px;font-weight:600;line-height:20px;text-decoration:none;">Read the full story<\/a><\/td><\/tr><\/table><\/td><\/tr><\/table><p>Outro<\/p>$/);
+		assert.match(plain, /<td class="email-button" align="center" bgcolor="#18181b" style="border-radius:8px;background:#18181b;mso-padding-alt:12px 24px;"><a href="https:\/\/example\.com\/story" style="display:inline-block;padding:12px 24px;border-radius:8px;background:#18181b;color:#ffffff;font-family:-apple-system,[^"]*;font-size:16px;font-weight:600;line-height:20px;text-decoration:none;">Read the full story<\/a><\/td><\/tr><\/table><\/td><\/tr><\/table><p>Outro<\/p>$/);
 
 		const poster = emailBody(render(button("Join", STORY, "left"), { preset: "poster" }).html);
 		assert.match(poster, /<td align="left"><table role="presentation" align="left"/);
@@ -231,12 +243,16 @@ describe("what holds an issue with a button", () => {
 
 	test("the review step blocks on it and goes back to the editor, but not for an email designed elsewhere", () => {
 		const input = { newsletter: NEWSLETTER, rendered: { html: "<p>{{unsubscribe_url}}</p>", bytes: 100 }, isSendingEnabled: true };
-		const campaign = { subject: "Hi", previewText: "Hi", testSentAt: new Date(), format: "rich", body: `<p>Hi</p>${button("Join")}` };
+		const campaign = { subject: "Hi", previewText: "Hi", authorId: "000000000000000000000001", testSentAt: new Date(), format: "rich", body: `<p>Hi</p>${button("Join")}` };
 		const { checks, blocking } = getPresendChecks({ ...input, campaign });
 		const check = checks.find(({ id }) => id === "buttons");
 		assert.deepEqual(check, { id: "buttons", label: "Buttons", isOk: false, message: BUTTON_PROBLEM });
 		assert.deepEqual(blocking.map(({ id }) => id), ["buttons"]);
-		assert.deepEqual(getCheckFix(check, { newsletterId: NEWSLETTER._id }), { label: "Edit content", field: "body" });
+		assert.deepEqual(getCheckFix(check, { newsletterId: NEWSLETTER._id }), {
+			label: "Edit content",
+			field: "body",
+			problem: { id: "buttons", message: BUTTON_PROBLEM },
+		});
 
 		const complete = getPresendChecks({ ...input, campaign: { ...campaign, body: `<p>Hi</p>${button("Join", STORY)}` } });
 		assert.equal(complete.checks.some(({ id }) => id === "buttons"), false, "no check to show while every button works");
@@ -273,6 +289,7 @@ describe("buttons through the API", () => {
 		await activate(user);
 		const fields = { name: "Buttons", slug: "buttons", fromName: "Field notes", fromEmail: "hello@buttons.mailcheapmail.com", postalAddress: "1 Main St, Paris" };
 		user.newsletterId = (await as(user, () => catchRedirect(newsletters.saveNewsletter(null, form(fields))))).split("/").at(-1);
+		await addAuthor(user);
 		user.key = (await as(user, () => apiKeys.createApiKey(null, form({ name: "Agent", level: "full" })))).key;
 	});
 

@@ -57,6 +57,7 @@ function fakeImport({ chunks = [], total } = {}) {
 		clearChunk: async ({ index }) => state.chunks.set(index, { rows: undefined }),
 		hasChunk: async ({ index }) => state.chunks.has(index),
 		queue: async ({ index }) => state.queued.push(index),
+		announce: async () => {},
 	};
 	return { state, deps, add: (rows) => state.chunks.set(state.job.chunks++, { rows }) };
 }

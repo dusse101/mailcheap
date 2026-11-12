@@ -32,7 +32,7 @@ const contactSchema = new mongoose.Schema(
 		},
 		subscribedAt: { type: Date, default: Date.now },
 		confirmedAt: { type: Date },
-		// Fork: when the confirm page first showed this pending contact its button. Signing up again starts it over.
+		// Fork: when the confirm page first loaded for this pending contact. Signing up again starts it over.
 		confirmOpenedAt: { type: Date },
 		// Fork: the one confirmation reminder for this pending cycle (lib/confirmation-reminder.js). cycleAt is the
 		// subscribedAt of that cycle, so a later signup after leaving can be reminded once of its own.

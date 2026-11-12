@@ -47,10 +47,11 @@ function installFetch() {
 			return Response.json({ events: [{ eventAction: "registration", eventDate: new Date(registeredAt).toISOString() }] });
 		}
 		if (url.startsWith("https://api.stripe.com/")) {
-			if (!stripeHandler) throw new Error(`Unexpected Stripe request: ${init.method ?? "GET"} ${url}`);
 			const { pathname, searchParams } = new URL(url);
 			const body = new URLSearchParams(typeof init.body === "string" ? init.body : "");
-			const result = await stripeHandler({ method: init.method ?? "GET", path: pathname, query: searchParams, body });
+			const request = { method: init.method ?? "GET", path: pathname, query: searchParams, body, headers: new Headers(init.headers) };
+			const result = (await stripeHandler?.(request)) ?? answerBillingPause(request);
+			if (!result) throw new Error(`Unexpected Stripe request: ${request.method} ${url}`);
 			return Response.json(result?.error ? { error: result.error } : result, {
 				status: result?.error ? (result.status ?? 400) : 200,
 				headers: { "request-id": "req_test" },
@@ -62,6 +63,20 @@ function installFetch() {
 
 export function mockStripe(handler) {
 	stripeHandler = handler;
+}
+
+// What blocking and unblocking an account with a plan ask of Stripe (lib/billing-pause.js), when the test's handler
+// doesn't answer: pausing or resuming its subscription, and a look at its invoices, none waiting. Newest last.
+export const billingPauseRequests = [];
+
+function answerBillingPause(request) {
+	const subscription = /^\/v1\/subscriptions\/(sub_\w+)$/.exec(request.path);
+	const fields = [...request.body.keys()];
+	const isPauseChange = request.method === "POST" && subscription && fields.some((field) => /^(pause_collection|billing_cycle_anchor)/.test(field));
+	const isInvoiceList = request.method === "GET" && request.path === "/v1/invoices";
+	if (!isPauseChange && !isInvoiceList) return null;
+	billingPauseRequests.push(request);
+	return isPauseChange ? { id: subscription[1], object: "subscription" } : { object: "list", data: [], has_more: false, url: "/v1/invoices" };
 }
 
 // handler(domain): when that domain was registered, or nothing for a registry without it.
@@ -245,6 +260,23 @@ export async function endSenderWarmup(user, newsletterId = user.newsletterId) {
 		{ upsert: true }
 	);
 	await Newsletter.updateOne({ accountId: user.accountId, _id: newsletterId }, { $set: { sendingDomain: domain } });
+}
+
+// The author an issue needs before it's sent or scheduled (models/Author.js), which issues drafted after it get. Shown
+// nowhere unless values say so, so emails and pages stay as they were, and at the user's address, as the editor
+// suggests it, so replies still reach them.
+export async function addAuthor(user, newsletterId = user.newsletterId, values = {}) {
+	const Author = (await import("../../models/Author.js")).default;
+	const author = await Author.create({
+		accountId: user.accountId,
+		newsletterId,
+		name: "Jane Doe",
+		email: user.email.toLowerCase(),
+		showOnWeb: false,
+		showInEmails: false,
+		...values,
+	});
+	return author.toObject();
 }
 
 // An issue the newsletter sent, which puts its website online (lib/archive-data.js).

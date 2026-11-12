@@ -90,9 +90,9 @@ export function PageBrandKeepClosed({ brand }) {
 }
 
 // A real link, but this address isn't waiting to confirm: they left, bounced, complained, or they're gone.
-export function PageBrandConfirmClosed({ brand }) {
+export function PageBrandConfirmClosed({ brand, focusTitle }) {
 	return (
-		<PageBrand brand={brand} eyebrow="Hmm" title="This link can't subscribe you">
+		<PageBrand brand={brand} eyebrow="Hmm" title="This link can't subscribe you" focusTitle={focusTitle}>
 			<p>
 				This address isn&apos;t waiting to confirm. If you left the list, sign up again. Otherwise use the newest
 				confirmation email.

@@ -156,8 +156,16 @@ describe("picking a contact to preview as", () => {
 		const [joanna] = (await find("joanna")).contacts;
 		assert.deepEqual(
 			joanna,
-			{ id: joanna.id, email: "joanna@example.com", firstName: "Joanna", fields: {}, gravatarHash: gravatarHash("joanna@example.com") },
-			"only what the preview fills in, and the hash its picture comes from"
+			{
+				id: joanna.id,
+				email: "joanna@example.com",
+				firstName: "Joanna",
+				fields: {},
+				tags: ["vip"],
+				segments: {},
+				gravatarHash: gravatarHash("joanna@example.com"),
+			},
+			"only what the preview fills in, the tags and segments its sections read, and the hash its picture comes from"
 		);
 		assert.deepEqual((await find("nameless")).contacts[0].firstName, null);
 	});

@@ -19,7 +19,7 @@ import {
 import { toast } from "@/lib/toast";
 
 // A contact's tags, typed or picked from the ones the newsletter's other contacts have. contact: { id, email, tags }.
-export default function DialogContactTags({ contact, isOpen, onOpenChange }) {
+export default function DialogContactTags({ contact, isOpen, onOpenChange, onCloseAutoFocus }) {
 	const [formKey, setFormKey] = useState(0);
 
 	function changeOpen(open) {
@@ -29,7 +29,7 @@ export default function DialogContactTags({ contact, isOpen, onOpenChange }) {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={changeOpen}>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent className="sm:max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
 				<FormContactTags key={formKey} contact={contact} onDone={() => changeOpen(false)} />
 			</DialogContent>
 		</Dialog>

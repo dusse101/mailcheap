@@ -14,15 +14,13 @@ import { markConfirmOpened } from "@/lib/signup-funnel";
 import Contact from "@/models/Contact";
 
 // The URL carries the confirmation token: keep it out of search results and referrer headers.
-// strict-origin, not no-referrer: no-referrer makes browsers send Origin: null on the button's POST, and that POST is
-// refused. strict-origin still leaves the query, and the token, out of Referer.
 export function generateMetadata() {
 	const brand = getPublicBrand();
 	const title = "Confirm your subscription";
 	return {
 		title: brand ? brandTitle(brand, title) : title,
 		robots: { index: false, follow: false },
-		referrer: "strict-origin",
+		referrer: "no-referrer",
 	};
 }
 
@@ -37,8 +35,8 @@ export default async function ConfirmPage({ searchParams }) {
 	if (lookup?.contact?.status === "pending") await noteOpened(newsletter, reference.contactId);
 
 	if (brand) {
-		if (outcome === "form" || outcome === "done") {
-			return <FormConfirmBrand brand={brand} token={validToken} fromEmail={newsletter.fromEmail} outcome={outcome} />;
+		if (outcome === "confirm" || outcome === "done") {
+			return <FormConfirmBrand brand={brand} token={validToken} fromEmail={newsletter.fromEmail} confirmed={outcome === "done"} />;
 		}
 		return outcome === "closed" ? <PageBrandConfirmClosed brand={brand} /> : <PageBrandConfirmInvalid brand={brand} />;
 	}
@@ -46,19 +44,14 @@ export default async function ConfirmPage({ searchParams }) {
 	return (
 		<main className="flex min-h-dvh items-center justify-center bg-background px-4 py-16">
 			<StyleTheme theme={newsletter?.theme} />
-			{outcome === "form" || outcome === "done" ? (
+			{newsletter ? (
 				<FormConfirm
 					token={validToken}
 					newsletterName={newsletter.name}
 					fromName={newsletter.fromName}
 					fromEmail={newsletter.fromEmail}
 					archiveUrl={newsletter.isArchiveLive ? getArchiveUrls(newsletter).siteIndex : null}
-					outcome={outcome}
 				/>
-			) : outcome === "closed" ? (
-				<CardNotice icon={Link2Off} title="This link doesn't work">
-					{"This address isn't waiting to confirm. Sign up again and use the newest confirmation email."}
-				</CardNotice>
 			) : (
 				<CardNotice icon={Link2Off} title="This link doesn't work">
 					It may be older than 30 days. Sign up again and use the newest confirmation email.
@@ -68,15 +61,15 @@ export default async function ConfirmPage({ searchParams }) {
 	);
 }
 
-// Opening the link never confirms. pending: the button. active or dormant: they already confirmed, including after a
+// Fork, for the branded page. pending: the page confirms. active or dormant: they already confirmed, including after a
 // refresh; dormant is still on the list, and only the keep link or signing up again brings it back to active.
-// Anything else (left, bounced, complained, gone): no button, so it can't look like a way back on.
+// Anything else (left, bounced, complained, gone): nothing to confirm, so it can't look like a way back on.
 const CONFIRMED_STATUSES = ["active", "dormant"];
 
 function confirmOutcome(newsletter, lookup) {
 	if (!newsletter) return "invalid";
-	if (lookup?.failed) return "form";
-	if (lookup?.contact?.status === "pending") return "form";
+	if (lookup?.failed) return "confirm";
+	if (lookup?.contact?.status === "pending") return "confirm";
 	if (CONFIRMED_STATUSES.includes(lookup?.contact?.status)) return "done";
 	return "closed";
 }
@@ -105,7 +98,7 @@ async function getContact(newsletter, contactId) {
 	}
 }
 
-// Fork: the signup funnel's "opened" step. Showing the button changes nothing else, and a failure still shows it.
+// Fork: the signup funnel's "opened" step, noted before the page confirms. A failure here still lets it confirm.
 async function noteOpened(newsletter, contactId) {
 	try {
 		await markConfirmOpened({ accountId: newsletter.accountId, newsletterId: newsletter._id, contactId });

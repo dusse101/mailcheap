@@ -104,6 +104,6 @@ export default function TableCampaigns({ campaigns, newsletter, hasActions = fal
 }
 
 // Web-only issues went on the website without an email (lib/publish-to.js).
-function isPublishedOnWebOnly(campaign) {
+export function isPublishedOnWebOnly(campaign) {
 	return campaign.publishTo === "web" && campaign.status === "sent";
 }

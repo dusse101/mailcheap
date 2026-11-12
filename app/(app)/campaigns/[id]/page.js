@@ -5,23 +5,33 @@ import CampaignReport from "@/components/CampaignReport";
 import FormCampaign from "@/components/FormCampaign";
 import { scoped } from "@/lib/account-scope";
 import { getAccountSendProblem, hasActiveSubscription, isBlocked } from "@/lib/account-state";
+import { getArchiveIssue, listOtherIssuePictures } from "@/lib/archive-data";
 import { getArchiveUrls } from "@/lib/archive-hosts";
+import { getShareCardUrl } from "@/lib/archive-seo";
+import { getAuthorSuggestion, listLiveAuthors, toAuthorView } from "@/lib/authors";
 import { findCampaignLinks } from "@/lib/campaign-links";
+import { readRecipientFilter } from "@/lib/campaign-recipient-rules";
+import { listCampaignRecipients } from "@/lib/campaign-recipients";
 import { getCampaignActivity, getCampaignComparison } from "@/lib/campaign-report";
 import { countCampaignGmail, countRemainingContacts, sendTimesPipeline } from "@/lib/campaign-queries";
 import { getSharedDomain, isSendingEnabled } from "@/lib/config";
 import { getFieldOptions } from "@/lib/contact-fields";
 import { getStoredTips } from "@/lib/content-review";
+import { gravatarHash } from "@/lib/gravatar";
+import { getPageViews } from "@/lib/page-views";
 import { getPostalAddress } from "@/lib/postal-address";
+import { sendsEmail } from "@/lib/publish-to";
 import { countAudience, countSegmentCards, findCampaignSegmentFilter, listLiveSegments } from "@/lib/segment-queries";
 import { compileSegment, describeSegment } from "@/lib/segments";
-import { getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
+import { findInNewsletters, getSelectedNewsletter, openNewsletter } from "@/lib/selected-newsletter";
 import { getPace } from "@/lib/send-spread";
 import { serialize } from "@/lib/serialize";
 import { findAccountDomains, loadSender } from "@/lib/sender";
 import { getOwnDomainNudge, isOnSharedDomain, isOwnDomainNudgeShown } from "@/lib/sender-rules";
 import { getSenderVolumes } from "@/lib/sender-warmup";
 import { siteExtensions } from "@/lib/site-extensions";
+import { hasTeam } from "@/lib/team";
+import { findDefaultTestRecipients } from "@/lib/test-recipients";
 import { TIME_ZONE_COOKIE, resolveTimeZone } from "@/lib/time-zone";
 import { countEmailsInFlight, getUsage } from "@/lib/usage";
 import Campaign from "@/models/Campaign";
@@ -29,14 +39,19 @@ import Newsletter from "@/models/Newsletter";
 
 export const metadata = { title: "Campaign" };
 
-export default async function CampaignPage({ params }) {
-	const [{ id }, view] = await Promise.all([params, getSelectedNewsletter()]);
+// The recipients a sent campaign's report lists at first, and how many more each Show more adds (?shown=).
+const RECIPIENTS_STEP = 50;
+const MAX_RECIPIENTS = 500;
+
+export default async function CampaignPage({ params, searchParams }) {
+	const [{ id }, query, view] = await Promise.all([params, searchParams, getSelectedNewsletter()]);
 	const { user, account } = view;
 	if (!isValidObjectId(id)) notFound();
 
-	const campaign = await Campaign.findOne(scoped(account, { _id: id })).lean();
+	const campaign = await findInNewsletters(view, Campaign, id);
 	if (!campaign) notFound();
 	openNewsletter(view, campaign.newsletterId, `/campaigns/${id}`);
+	if (!campaign.newsletterId.equals(view.selected._id)) notFound();
 	const stored = await Newsletter.findOne(scoped(account, { _id: campaign.newsletterId })).lean();
 	if (!stored) notFound();
 	// The previews and the checks show the address its emails print.
@@ -44,30 +59,53 @@ export default async function CampaignPage({ params }) {
 	const plan = await getPlanState(account);
 
 	if (!["draft", "scheduled"].includes(campaign.status)) {
-		const [{ providers, timeline }, comparison, remainingCount, links, cookieStore] = await Promise.all([
+		const filter = readRecipientFilter(query.recipients);
+		const shown = Math.min(MAX_RECIPIENTS, Math.max(RECIPIENTS_STEP, Number.parseInt(query.shown, 10) || RECIPIENTS_STEP));
+		const [{ providers, timeline, recipients: counts }, comparison, remainingCount, links, cookieStore, list, issue] = await Promise.all([
 			getCampaignActivity(campaign),
 			getCampaignComparison(campaign),
 			countRemainingContacts(campaign),
 			findCampaignLinks(campaign),
 			cookies(),
+			sendsEmail(campaign) ? listCampaignRecipients(account, campaign, { filter, limit: shown }) : null,
+			newsletter.archiveEnabled && campaign.archiveSlug ? getArchiveIssue(newsletter, campaign.archiveSlug) : null,
 		]);
+		// Its card as the website shows it: its page's title, description and picture, or the card MailCheap draws.
+		const webPage = issue && {
+			title: issue.subject,
+			description: issue.previewText,
+			imageUrl: issue.thumbnailUrl || getShareCardUrl(newsletter, issue),
+		};
+		const timeZone = resolveTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value);
 		// For a next step's dialog, and how a send going out reaches Gmail's readers.
 		const isGoingOut = ["sending", "paused"].includes(campaign.status);
-		const [audience, senderVolumes, gmail] = await Promise.all([
+		const [audience, senderVolumes, gmail, pageViews] = await Promise.all([
 			remainingCount > 0 ? countAudience(account, newsletter._id, await findCampaignSegmentFilter(campaign)) : null,
 			remainingCount > 0 || isGoingOut ? loadSenderVolumes(account, newsletter) : null,
 			isGoingOut ? countCampaignGmail(campaign) : null,
+			issue || !sendsEmail(campaign) ? getPageViews(campaign, timeZone) : null,
 		]);
 		return (
 			<CampaignReport
+				role={view.role}
 				campaign={serialize(campaign)}
 				newsletter={serialize(newsletter)}
 				contactFields={getFieldOptions(account)}
 				providers={providers}
 				links={serialize(links)}
+				recipients={
+					list && {
+						filter,
+						counts,
+						recipients: list.recipients,
+						hasMore: Boolean(list.nextCursor) && shown < MAX_RECIPIENTS,
+						shown,
+						step: RECIPIENTS_STEP,
+					}
+				}
 				timeline={timeline}
 				comparison={comparison}
-				timeZone={resolveTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value)}
+				timeZone={timeZone}
 				remainingCount={remainingCount}
 				emailsLeft={plan.emailsLeft}
 				isBlocked={isBlocked(account)}
@@ -76,6 +114,8 @@ export default async function CampaignPage({ params }) {
 				gmail={gmail}
 				gmailShare={getGmailShare(audience)}
 				isSharedSender={isOnSharedDomain(newsletter.fromEmail, getSharedDomain())}
+				webPage={webPage}
+				pageViews={pageViews}
 			/>
 		);
 	}
@@ -84,13 +124,17 @@ export default async function CampaignPage({ params }) {
 	const segments = await listLiveSegments(account, newsletter._id);
 	const segment = campaign.segmentId ? segments.find(({ _id }) => _id.equals(campaign.segmentId)) : null;
 	const isSegmentDeleted = Boolean(campaign.segmentId && !segment);
-	const [audience, everyone, sender, sendTimes, domains, tips] = await Promise.all([
+	const [audience, everyone, sender, sendTimes, domains, tips, otherPictures, isTeamDraft, authors, testRecipients] = await Promise.all([
 		isSegmentDeleted ? { contacts: 0, neverMailed: 0, gmail: 0 } : countAudience(account, newsletter._id, segment && compileSegment(segment)),
 		campaign.segmentId ? countSegmentCards(account, newsletter._id, []) : null,
 		loadSender(account, newsletter),
 		getSendTimes(campaign),
 		findAccountDomains(account._id),
 		getStoredTips({ campaign, newsletter }),
+		newsletter.archiveEnabled ? listOtherIssuePictures(newsletter, campaign._id) : [],
+		hasTeam(account, newsletter._id),
+		listLiveAuthors(account, newsletter._id),
+		findDefaultTestRecipients({ account, user }),
 	]);
 	const senderVolumes = sender.identity ? await getSenderVolumes(account, newsletter, sender.identity) : null;
 	const sharedDomain = getSharedDomain();
@@ -115,7 +159,7 @@ export default async function CampaignPage({ params }) {
 			isSharedSender={isOnSharedDomain(newsletter.fromEmail, sharedDomain)}
 			domainNudge={isDomainNudgeShown ? domainNudge : null}
 			isSendingEnabled={isSendingEnabled()}
-			testEmail={user.email}
+			testRecipients={testRecipients}
 			sendTimes={sendTimes}
 			archiveUrlBase={newsletter.archiveEnabled ? getArchiveUrls(newsletter).absolutePost("") : null}
 			planProblem={plan.problem}
@@ -124,6 +168,10 @@ export default async function CampaignPage({ params }) {
 			newContacts={audience.neverMailed}
 			gmailShare={getGmailShare(audience)}
 			tips={tips}
+			otherPictures={otherPictures}
+			collaboration={isTeamDraft ? { revision: campaign.revision ?? 0 } : null}
+			authors={authors.map((author) => ({ ...toAuthorView(author), gravatarHash: gravatarHash(author.email) }))}
+			authorSuggestion={getAuthorSuggestion({ user, newsletter })}
 		/>
 	);
 }

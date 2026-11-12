@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, ChevronDown, Loader2, X } from "lucide-react";
 import { getImports } from "@/app/(app)/contacts/actions";
+import ListLeftOut from "@/components/ListLeftOut";
 import { formatNumber } from "@/lib/format";
 import { DROP_REASONS } from "@/lib/import-checks";
 import { toast } from "@/lib/toast";
@@ -87,7 +88,7 @@ function RowImport({ item, onDismiss }) {
 					</p>
 					<p className="truncate text-xs text-muted-foreground tabular-nums">{describeProgress(item, droppedTotal)}</p>
 				</div>
-				{!isRunning && droppedTotal > 0 && (
+				{!isRunning && (droppedTotal > 0 || isOpen) && (
 					<button
 						type="button"
 						onClick={() => setIsOpen((open) => !open)}
@@ -118,14 +119,19 @@ function RowImport({ item, onDismiss }) {
 				</div>
 			)}
 			{isOpen && (
-				<ul className="mt-3 flex flex-col gap-1 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-					{dropped.map(([reason, count]) => (
-						<li key={reason} className="flex justify-between gap-4">
-							<span>{DROP_REASONS[reason] ?? reason}</span>
-							<span className="text-foreground tabular-nums">{formatNumber(count)}</span>
-						</li>
-					))}
-				</ul>
+				<div className="mt-3 flex flex-col gap-3 border-t border-border/60 pt-3">
+					{dropped.length > 0 && (
+						<ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+							{dropped.map(([reason, count]) => (
+								<li key={reason} className="flex justify-between gap-4">
+									<span>{DROP_REASONS[reason] ?? reason}</span>
+									<span className="text-foreground tabular-nums">{formatNumber(count)}</span>
+								</li>
+							))}
+						</ul>
+					)}
+					<ListLeftOut importId={item.importId} />
+				</div>
 			)}
 		</div>
 	);

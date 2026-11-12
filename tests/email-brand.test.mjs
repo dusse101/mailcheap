@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { CONFIRM_URL_PLACEHOLDER, getConfirmationContent, getConfirmationProblem } from "../lib/confirmation-content.js";
-import { KEEP_BUTTON_LABEL } from "../lib/last-chance-content.js";
+import { KEEP_BUTTON_LABEL, getLastChanceContent } from "../lib/last-chance-content.js";
 import { getEmailBrand } from "../lib/public-brand.js";
 import { UNSUBSCRIBE_PLACEHOLDER, renderEmail } from "../lib/render-email.js";
 import { buildRecipientEmail } from "../lib/sending-rules.js";
@@ -210,6 +210,53 @@ test("getConfirmationProblem still accepts the custom confirmation copy when the
 		assert.equal(getConfirmationProblem(getConfirmationContent({ name: "Field notes" })), null);
 		const { html } = renderEmail({ ...CUSTOM_CONFIRMATION, kind: "confirmation", newsletter, fontBaseUrl: APP });
 		assert.match(html, /bgcolor="#d63a55"[^>]*mso-padding-alt:13px 28px[^>]*>\s*<a href="\{\{confirm_url\}\}"[^>]*padding:13px 28px/);
+	});
+});
+
+test("EMAIL_BRAND unset keeps the stock editor button", () => {
+	withEnv({ EMAIL_BRAND: "" }, () => {
+		const { html } = renderEmail({
+			format: "rich",
+			html: '<div data-button=""><a href="https://example.com/go">Go</a></div>',
+			subject: "Hi",
+			newsletter,
+			fontBaseUrl: APP,
+		});
+		assert.match(html, /bgcolor="#18181b"/);
+		assert.equal(html.includes("#d63a55"), false);
+		assert.equal(html.includes("border-radius:999px"), false);
+	});
+});
+
+test("the rich built-in confirmation and last-chance keep the Taco & Tell pill", () => {
+	withEnv({ EMAIL_BRAND: "tacoandtell" }, () => {
+		const confirmation = renderEmail({
+			...getConfirmationContent({ name: "Field notes", description: "A weekly note." }),
+			kind: "confirmation",
+			newsletter,
+			fontBaseUrl: APP,
+		});
+		assert.match(confirmation.html, /bgcolor="#d63a55"/);
+		assert.match(confirmation.html, /border:2px solid #003e55/);
+		assert.match(confirmation.html, /border-radius:999px/);
+		assert.equal(confirmation.html.includes('bgcolor="#18181b"'), false);
+		assert.match(confirmation.html, /not on the list until you confirm/);
+		assert.ok(confirmation.html.includes(`href="${CONFIRM_URL_PLACEHOLDER}"`));
+		assert.equal(/you subscribed/i.test(confirmation.html), false);
+
+		const lastChance = renderEmail({
+			...getLastChanceContent({ name: "Field notes" }),
+			kind: "last-chance",
+			newsletter,
+			fontBaseUrl: APP,
+		});
+		assert.match(lastChance.html, /bgcolor="#d63a55"/);
+		assert.match(lastChance.html, /border:2px solid #003e55/);
+		assert.match(lastChance.html, /border-radius:999px/);
+		assert.equal(lastChance.html.includes('bgcolor="#18181b"'), false);
+		assert.ok(lastChance.html.includes(`This is the last email unless you tap “${KEEP_BUTTON_LABEL}” above.`));
+		assert.ok(lastChance.html.includes('href="{{keep_url}}"'));
+		assert.equal(/every Thursday morning/.test(lastChance.html), false);
 	});
 });
 

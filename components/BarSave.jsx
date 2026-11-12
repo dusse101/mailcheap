@@ -70,7 +70,7 @@ export default function BarSave({ isDirty, isSaving, savedAt, onDiscard, label =
 					<p aria-live="polite" className="flex min-w-0 flex-1 items-center gap-2.5 text-sm font-medium">
 						<span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
 							{isSaved ? (
-								<Check key={savedAt} className="size-4 text-emerald-500 animate-icon-in" />
+								<Check key={savedAt} className="size-4 text-emerald-500 animate-draw-check" />
 							) : (
 								<span className="relative size-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 dark:bg-amber-500 dark:ring-amber-500/25">
 									{isCued && (
@@ -120,8 +120,9 @@ export default function BarSave({ isDirty, isSaving, savedAt, onDiscard, label =
 
 // The support chat's button sits in the bottom right corner (app/globals.css). Where the bar would come within
 // --chat-clearance of the screen's right edge, like the get-started pill, it moves left within the column, then
-// narrows: the slot's padding is what it gives up. The column changes with the window and with the sidebar.
-function useClearOfChat(slotRef, barRef, isShown) {
+// narrows: the slot's padding is what it gives up. The column changes with the window and with the sidebar. The contacts
+// list's selection bar (BarContactSelection) does the same.
+export function useClearOfChat(slotRef, barRef, isShown) {
 	useLayoutEffect(() => {
 		if (!isShown) return;
 		const slot = slotRef.current;

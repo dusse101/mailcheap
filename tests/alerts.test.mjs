@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { ADMIN_ALERTS, isDashboardAlert, isTelegramAlert } from "../lib/alert-rules.js";
 import { getTeamStatusAlerts } from "../lib/email-provider/postshiba-rules.js";
 import { escapeTelegramHtml, formatTelegramAlert, isTelegramConfigured } from "../lib/telegram.js";
+import { findAlertCalls, isAdminAlert, kindsOf } from "./helpers/alert-calls.mjs";
 import { activate, answerTelegram, as, catchRedirect, form, platformEmails, signIn, startTestApp, telegramMessages, withEnv } from "./helpers/app.mjs";
 import { POSTSHIBA_ENV, createFakePostshiba } from "./helpers/postshiba.mjs";
 import { failNextPublish } from "./stubs/dns-broker.mjs";
@@ -13,7 +11,6 @@ import { flushAfter } from "./stubs/next-server.mjs";
 
 // The admins' alerts on Telegram: which ones go there, how they read, how often, and nothing at all without both
 // TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. tests/helpers/app.mjs records the Bot API's requests; none leaves.
-const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const TELEGRAM = { TELEGRAM_BOT_TOKEN: "123456:test-bot-token-never-logged", TELEGRAM_CHAT_ID: "424242" };
 const NO_TELEGRAM = { TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "" };
 const CRON_SECRET = "test-cron-secret-0123456789abcdef";
@@ -23,39 +20,6 @@ let app;
 let fake;
 let m;
 let visitors = 0;
-
-async function listSources(dir) {
-	return (await readdir(join(ROOT, dir), { recursive: true })).filter((name) => /\.(m?js|jsx)$/.test(name)).map((name) => join(dir, name));
-}
-
-// The object of each sendAlert({ ... }) and sendAlertIfRepeated(name, { ... }) call, its braces counted.
-function findAlertObjects(source) {
-	const objects = [];
-	for (const match of source.matchAll(/sendAlert(?:IfRepeated)?\([^{)]*\{/g)) {
-		const start = match.index + match[0].length - 1;
-		let depth = 0;
-		let end = start;
-		for (; end < source.length; end++) {
-			if (source[end] === "{") depth++;
-			if (source[end] === "}" && --depth === 0) break;
-		}
-		objects.push(source.slice(start, end + 1));
-	}
-	return objects;
-}
-
-// Admin alerts name no account: accountId is missing or null.
-function isAdminAlert(object) {
-	const property = /(?:^\{\s*|\n\s*)accountId\b\s*(?::\s*([^,\n]+))?,/.exec(object);
-	return !property || property[1]?.trim() === "null";
-}
-
-// The kinds a key can start with: its own start, and the strings it picks one from.
-function kindsOf(object) {
-	const expression = /(?:^\{\s*|[\n,]\s*)key:\s*([^,\n]+)/.exec(object)?.[1] ?? "";
-	const start = /^[`"]([a-z0-9-]*)/.exec(expression)?.[1];
-	return [start, ...[...expression.matchAll(/"([a-z0-9-]+)"/g)].map(([, kind]) => kind)].filter(Boolean);
-}
 
 function isClassified(kind) {
 	return Object.hasOwn(ADMIN_ALERTS, kind) || (kind.endsWith("-") && Object.keys(ADMIN_ALERTS).some((known) => known.startsWith(kind)));
@@ -107,6 +71,7 @@ describe("which alerts reach Telegram", () => {
 	test("the admins' alerts that need them do; the others, an account's own alerts and unknown kinds don't, and those with nothing to do aren't emailed either", () => {
 		const needed = [
 			`account-blocked:${ACCOUNT_ID}:1792000000000`,
+			"customer-blocked:6a0000000000000000000002",
 			`tenant-hold:${ACCOUNT_ID}`,
 			`tenant-suspend-failed:${ACCOUNT_ID}`,
 			`purge-postponed:${ACCOUNT_ID}`,
@@ -140,15 +105,13 @@ describe("which alerts reach Telegram", () => {
 	test("every admin alert in the code has its kind in lib/alert-rules.js", async () => {
 		const unclassified = [];
 		let count = 0;
-		for (const file of [...(await listSources("lib")), ...(await listSources("app"))]) {
-			for (const object of findAlertObjects(await readFile(join(ROOT, file), "utf8"))) {
-				if (!isAdminAlert(object)) continue;
-				count++;
-				const kinds = kindsOf(object);
-				// A key that comes from a spread is checked where it's made (getTeamStatusAlerts below).
-				const isKnown = kinds.length > 0 ? kinds.some(isClassified) : /\.\.\.\w/.test(object);
-				if (!isKnown) unclassified.push(`${file}: ${object.slice(0, 120)}`);
-			}
+		for (const { file, object } of await findAlertCalls()) {
+			if (!isAdminAlert(object)) continue;
+			count++;
+			const kinds = kindsOf(object);
+			// A key that comes from a spread is checked where it's made (getTeamStatusAlerts below).
+			const isKnown = kinds.length > 0 ? kinds.some(isClassified) : /\.\.\.\w/.test(object);
+			if (!isKnown) unclassified.push(`${file}: ${object.slice(0, 120)}`);
 		}
 		assert.ok(count >= 15, `found ${count} admin alerts`);
 		assert.deepEqual(unclassified, []);
@@ -201,6 +164,26 @@ describe("delivery", () => {
 		assert.equal(telegramMessages.length, before.telegram);
 		assert.deepEqual(toAdmins(platformEmails.slice(before.emails)).map(({ subject }) => subject), Array(3).fill("[MailCheap] Account blocked"));
 		assert.deepEqual(await withEnv(NO_TELEGRAM, () => m.alerts.announceTelegram()), { skipped: "Telegram isn't set up" });
+	});
+
+	test("with ADMIN_ALERT_EMAILS, the admins' alerts are emailed there and not to ADMIN_EMAILS, those that need them and those only worth a look, and an owner's still go to the owner", async () => {
+		const owner = await signIn("alert-owner@example.com");
+		await flushAfter();
+		await withEnv({ ...NO_TELEGRAM, ADMIN_ALERT_EMAILS: "inbox@example.org" }, async () => {
+			const before = platformEmails.length;
+			const campaignId = "6a00000000000000000000b1";
+			await m.alerts.sendAlert({ accountId: null, key: `customer-blocked:${campaignId}`, title: "A paying customer can't send", detail: "Letter (letter.example.com, Growth plan): PostShiba suspended letter.example.com." });
+			await m.alerts.sendAlert({ accountId: null, key: `content-flagged:${campaignId}`, title: "Issue flagged", detail: `The content check wasn't sure about campaign ${campaignId}. It went out.` });
+			await m.alerts.sendAlert({ accountId: owner.accountId, key: "complaints", title: "Spam complaint", detail: "A reader marked an email as spam." });
+			assert.deepEqual(
+				platformEmails.slice(before).map(({ to, subject }) => [to, subject]),
+				[
+					[["inbox@example.org"], "[MailCheap] A paying customer can't send"],
+					[["inbox@example.org"], "[MailCheap] Issue flagged"],
+					[["alert-owner@example.com"], "[MailCheap] Spam complaint"],
+				]
+			);
+		});
 	});
 
 	test("with both, an alert that needs an admin reaches Telegram in HTML, escaped, and is emailed as before", async () => {
@@ -368,10 +351,12 @@ describe("what alerts", () => {
 			for (const authorization of [undefined, CRON_SECRET, `Bearer ${CRON_SECRET.slice(1)}`, `Bearer ${CRON_SECRET}x`, "Bearer someone-elses-secret-0123456789"]) {
 				assert.equal((await call(authorization)).status, 401, String(authorization));
 			}
-			const { summaries, domains, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
+			const { summaries, domains, imports, billing, ...checks } = await (await call(`Bearer ${CRON_SECRET}`)).json();
 			assert.deepEqual(checks, { postshiba: { alerts: [] }, telegram: { skipped: "already announced" } });
 			assert.equal(typeof summaries.queued, "number", "and the summary emails due this hour");
 			assert.equal(typeof domains.checked, "number", "and the verified domains due for their daily look at DNS");
+			assert.equal(typeof imports.checked, "number", "and the imports that stalled with nobody looking");
+			assert.equal(typeof billing.paused, "number", "and the billing of blocked accounts");
 
 			const tenantId = "TnHeld01";
 			fake.state.tenants.set(tenantId, { id: tenantId, name: `mc-${user.accountId}`, slug: `mc-${user.accountId}`, suspended: false, held: true });
@@ -400,6 +385,66 @@ describe("what alerts", () => {
 			fake.fail({ method: "GET", path: /\/status$/, status: 401, body: { error: "Invalid token or no user signed in" } });
 			await call(`Bearer ${CRON_SECRET}`);
 			assert.deepEqual(firstLines(telegramMessages.slice(-1)), ["<b>MailCheap</b> · PostShiba refused the status check"]);
+		});
+	});
+
+	test("the hourly check alerts for each newsletter with a plan that sends from a domain PostShiba suspended or holds, and for no other", async () => {
+		const call = () => m.cronRoute.GET(new Request("http://localhost:3000/api/cron/hourly", { headers: { authorization: `Bearer ${CRON_SECRET}` } }));
+		const Newsletter = (await import("../models/Newsletter.js")).default;
+		const paying = await signIn("suspended-domain@example.com");
+		await activate(paying, { plan: "growth" });
+		const unpaid = await signIn("unpaid-domain@example.com");
+		await m.Account.updateOne({ _id: paying.accountId }, { $set: { "postshiba.tenantId": "TnPaying1" } });
+		await m.Account.updateOne({ _id: unpaid.accountId }, { $set: { "postshiba.tenantId": "TnUnpaid1" } });
+		const [held, paused, noted] = await Newsletter.create([
+			{ accountId: paying.accountId, name: "Held letter", slug: "held-letter", fromEmail: "hello@held-letter.example.com" },
+			{ accountId: paying.accountId, name: "Paused letter", slug: "paused-letter", fromEmail: "hello@paused-letter.example.com" },
+			{ accountId: paying.accountId, name: "Noted letter", slug: "noted-letter", fromEmail: "hello@noted-letter.example.com" },
+			{ accountId: paying.accountId, name: "Moved letter", slug: "moved-letter", fromEmail: "hello@own-domain.example.com" },
+			{ accountId: unpaid.accountId, name: "Unpaid letter", slug: "unpaid-letter", fromEmail: "hello@unpaid-letter.example.com" },
+		]);
+		const domain = (id, name, tenantId, fields = {}) => ({ id, name, tenant_id: tenantId, sending_allowed: false, suspended: true, suspended_reason: "paused", operator_held: false, ...fields });
+		const added = [
+			domain("DmHeld01", "held-letter.example.com", "TnPaying1", { suspended_reason: "operator_hold", operator_held: true }),
+			domain("DmPaus01", "paused-letter.example.com", "TnPaying1"),
+			domain("DmNote01", "noted-letter.example.com", "TnPaying1", { suspended_reason: "Complaint from reader@example.org" }),
+			domain("DmMove01", "moved-letter.example.com", "TnPaying1"),
+			domain("DmUnpd01", "unpaid-letter.example.com", "TnUnpaid1"),
+			domain("DmOwn001", "own-domain.example.com", "TnPaying1", { suspended: false, suspended_reason: null, dkim_status: "pending" }),
+		];
+		for (const item of added) fake.state.domains.set(item.id, item);
+		await withEnv({ ...TELEGRAM, ...POSTSHIBA_ENV, CRON_SECRET }, async () => {
+			const before = { telegram: telegramMessages.length, emails: platformEmails.length };
+			try {
+				const { postshiba } = await (await call()).json();
+				assert.deepEqual(
+					postshiba.alerts,
+					[held, paused, noted].map(({ _id }) => `customer-blocked:${_id}`),
+					"not a domain no newsletter sends from, an unpaid account's or one still being set up"
+				);
+				const sent = telegramMessages.slice(before.telegram).map(({ text }) => text);
+				assert.deepEqual(firstLines(telegramMessages.slice(before.telegram)), Array(3).fill("<b>MailCheap</b> · A paying customer can't send"));
+				assert.match(
+					sent[0],
+					/\n\nHeld letter \(held-letter\.example\.com, Growth plan\): PostShiba's abuse team holds held-letter\.example\.com \(operator_hold\)\. Its campaigns pause and its signup and test emails fail until it's lifted\.\nAsk PostShiba's support why it's held\.\n/
+				);
+				assert.match(sent[1], /\n\nPaused letter \(paused-letter\.example\.com, Growth plan\): PostShiba suspended paused-letter\.example\.com \(paused\)\./);
+				assert.match(sent[1], new RegExp(`/admin/newsletters/${paused._id}$`));
+				assert.match(sent[2], /\n\nNoted letter \(noted-letter\.example\.com, Growth plan\): PostShiba suspended noted-letter\.example\.com\. Its campaigns/, "a reason that isn't a code isn't quoted");
+				const emailed = toAdmins(platformEmails.slice(before.emails));
+				assert.equal(emailed.length, 3);
+				assert.doesNotMatch([...sent, ...emailed.map(({ text }) => text)].join("\n"), /reader@/);
+
+				await call();
+				assert.equal(telegramMessages.length - before.telegram, 3, "the next hour finds the same blocks: nothing new");
+				assert.equal(toAdmins(platformEmails.slice(before.emails)).length, 3, "emailed once a day");
+				const attention = await m.adminStats.listAttention();
+				const listed = attention.blockedSends.filter(({ ownerEmail }) => ownerEmail === "suspended-domain@example.com");
+				assert.deepEqual(listed.map(({ timesThisWeek }) => timesThisWeek), [2, 2, 2]);
+				assert.match(listed.find(({ detail }) => detail.startsWith("Held letter")).detail, /: the email provider's abuse team holds held-letter\.example\.com/);
+			} finally {
+				for (const item of added) fake.state.domains.delete(item.id);
+			}
 		});
 	});
 

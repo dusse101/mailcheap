@@ -7,8 +7,8 @@ import { formatCount, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Tags as chips: Enter, a comma or Tab adds what's typed, Backspace in the empty field takes the last one off. Under it,
-// the tags the newsletter's contacts already have, narrowed by what's typed: a click adds one, and so do the arrow keys
-// then Enter. suggestions: [{ name, contacts }], the most used first.
+// the tags the newsletter's contacts already have: a click adds one, and so do the arrow keys then Enter.
+// suggestions: [{ name, contacts }], the most used first.
 export default function InputTags({
 	value,
 	onChange,
@@ -17,6 +17,7 @@ export default function InputTags({
 	max = MAX_TAGS,
 	placeholder = "Type a tag, then press Enter",
 	label = "Tags",
+	suggestionsLabel = "Tags you've used",
 	autoFocus,
 }) {
 	const listId = useId();
@@ -107,7 +108,7 @@ export default function InputTags({
 			{shown.length > 0 && (
 				<div className="flex flex-col gap-1.5">
 					<span id={`${listId}-label`} className="text-xs text-muted-foreground">
-						Tags you&apos;ve used
+						{suggestionsLabel}
 					</span>
 					{/* Picked from the field, which keeps the focus: a click doesn't take it, so what's typed isn't added on the way. */}
 					<ul id={listId} role="listbox" aria-labelledby={`${listId}-label`} className="flex flex-wrap gap-1.5">
@@ -137,10 +138,9 @@ export default function InputTags({
 	);
 }
 
-// The tags to offer: the ones not given yet that contain what's typed, those starting with it first, then the most used.
+// The tags to offer, in the order given: the ones not given yet, all of them while a new one is typed, but the one typed,
+// which Enter adds.
 export function pickSuggestions(suggestions, value, text) {
-	const query = text.replace(/\s+/g, " ").trim().toLowerCase();
-	return suggestions
-		.filter(({ name }) => !value.includes(name) && name.includes(query))
-		.sort((a, b) => Number(!a.name.startsWith(query)) - Number(!b.name.startsWith(query)));
+	const typed = cleanTag(text);
+	return suggestions.filter(({ name }) => !value.includes(name) && name !== typed);
 }

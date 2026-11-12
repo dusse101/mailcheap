@@ -4,11 +4,10 @@ import { Users } from "lucide-react";
 import ButtonsContacts from "@/components/ButtonsContacts";
 import CardAddContacts from "@/components/CardAddContacts";
 import CardImports from "@/components/CardImports";
-import DialogImportContacts from "@/components/DialogImportContacts";
 import FilterContacts from "@/components/FilterContacts";
-import GatePlan from "@/components/GatePlan";
 import HeaderPage from "@/components/HeaderPage";
 import ProviderContactOptions from "@/components/ProviderContactOptions";
+import ProviderContactSelection from "@/components/ProviderContactSelection";
 import StateEmpty from "@/components/StateEmpty";
 import TableContacts, { NavPages } from "@/components/TableContacts";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +16,6 @@ import { getAppUrl, isCloud } from "@/lib/config";
 import { getFieldOptions } from "@/lib/contact-fields";
 import { LIST_STATUSES, readContactFilters, toFilterQuery, toListQuery } from "@/lib/contact-filters";
 import { CONTACTS_PAGE_SIZE, findContactsPage, listContactSources, listContactTags } from "@/lib/contacts";
-import { LIST_STARTED_AT, getContactsHeader } from "@/lib/contacts-header";
 import { getAddContactCurl } from "@/lib/docs/reference";
 import { listImports } from "@/lib/import-jobs";
 import { toNewsletterOption } from "@/lib/newsletters";
@@ -52,16 +50,17 @@ export default async function ContactsPage({ searchParams }) {
 			])
 		: [NO_PAGE, [], [], []];
 	const pageCount = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
-	// totalAll counts within the search and the filters but every status, while the actions at the top follow the whole
-	// list, which a narrowed page with fewer than LIST_STARTED_AT counts again, up to that.
+	// totalAll counts within the search and the filters but every status, while the card of an empty list and the export
+	// follow the whole list, which a narrowed page that finds no one counts again.
 	const isNarrowed = Boolean(filters.query || filters.tag || filters.source || filters.signedUpSince || filters.signedUpBefore);
 	const listCount =
-		isNarrowed && newsletterId && totalAll < LIST_STARTED_AT
-			? await Contact.countDocuments(scoped(account, { newsletterId: selected._id }), { limit: LIST_STARTED_AT })
+		isNarrowed && newsletterId && totalAll === 0
+			? await Contact.countDocuments(scoped(account, { newsletterId: selected._id }), { limit: 1 })
 			: totalAll;
 	const hasContacts = listCount > 0;
 	const newsletter = selected && toNewsletterOption(selected);
 	const importGuides = isCloud() ? siteExtensions.importGuides : [];
+	const curl = getAddContactCurl(getAppUrl(), selected?.slug);
 
 	function hrefFor(target) {
 		return `/contacts${toFilterQuery(filters, { page: target > 1 && target })}`;
@@ -73,11 +72,14 @@ export default async function ContactsPage({ searchParams }) {
 	return (
 		<ProviderContactOptions fields={fields} tags={tags}>
 			<HeaderPage title="Contacts">
-				<ButtonsContacts header={getContactsHeader(listCount)} newsletter={newsletter} filters={filters} count={total}>
-					<GatePlan reason="import">
-						<DialogImportContacts newsletter={newsletter} guides={importGuides} />
-					</GatePlan>
-				</ButtonsContacts>
+				<ButtonsContacts
+					hasContacts={hasContacts}
+					newsletter={newsletter}
+					filters={filters}
+					count={total}
+					curl={curl}
+					importGuides={importGuides}
+				/>
 			</HeaderPage>
 
 			<div className="flex flex-col gap-4">
@@ -96,14 +98,22 @@ export default async function ContactsPage({ searchParams }) {
 				)}
 
 				{!hasContacts ? (
-					<CardAddContacts newsletter={newsletter} curl={getAddContactCurl(getAppUrl(), selected?.slug)} importGuides={importGuides} />
+					<CardAddContacts newsletter={newsletter} curl={curl} importGuides={importGuides} />
 				) : contacts.length === 0 ? (
 					<StateEmpty icon={Users} title="No contacts match" />
 				) : (
-					<TableContacts contacts={contacts} fields={fields} />
+					<ProviderContactSelection
+						key={`${newsletterId}${toFilterQuery(filters, { page })}`}
+						newsletterId={newsletterId}
+						filters={filters}
+						total={total}
+						counts={counts}
+						contacts={contacts.map(({ _id, status, tags: contactTags }) => ({ id: String(_id), status, tags: contactTags ?? [] }))}
+					>
+						<TableContacts contacts={contacts} fields={fields} />
+						<NavPages page={page} pageCount={pageCount} total={total} hrefFor={hrefFor} />
+					</ProviderContactSelection>
 				)}
-
-				<NavPages page={page} pageCount={pageCount} total={total} hrefFor={hrefFor} />
 			</div>
 		</ProviderContactOptions>
 	);

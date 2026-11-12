@@ -3,6 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
 	ArrowRight,
 	CalendarClock,
@@ -18,21 +19,37 @@ import {
 	Trash2,
 	UserRound,
 } from "lucide-react";
-import { duplicateCampaign, saveCampaign, sendTestCampaign, setCampaignPublishTo } from "@/app/(app)/campaigns/actions";
+import {
+	addCampaignAuthor,
+	countAllSectionReaders,
+	countSectionReaders,
+	duplicateCampaign,
+	loadDraft,
+	saveCampaign,
+	sendTestCampaign,
+	setCampaignAuthor,
+	setCampaignPublishTo,
+} from "@/app/(app)/campaigns/actions";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
 import BadgeStatus from "@/components/BadgeStatus";
 import CardSettings from "@/components/CardSettings";
 import CardTips from "@/components/CardTips";
 import DialogDiscardCampaign from "@/components/DialogDiscardCampaign";
 import DialogPreviewEmail from "@/components/DialogPreviewEmail";
+import DialogSegment from "@/components/DialogSegment";
+import DialogSendTest from "@/components/DialogSendTest";
 import EditorRich from "@/components/EditorRich";
+import FooterEmail from "@/components/FooterEmail";
 import IconField from "@/components/IconField";
 import LinkHelpFields from "@/components/LinkHelpFields";
 import ListChecks from "@/components/ListChecks";
 import NavSteps from "@/components/NavSteps";
 import NoticeSendProblems, { ListSendProblems } from "@/components/NoticeSendProblems";
+import OverlayCollaborators from "@/components/OverlayCollaborators";
 import PanelSend from "@/components/PanelSend";
+import PickerAuthor from "@/components/PickerAuthor";
 import RowCampaign from "@/components/RowCampaign";
+import StackCollaborators from "@/components/StackCollaborators";
 import StatusSaved from "@/components/StatusSaved";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +61,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { getAuthorByline } from "@/lib/author-rules";
 import { getCheckFix, getTipFix } from "@/lib/campaign-steps";
 import { toPreviewFrame } from "@/lib/email-preview";
 import { formatCount } from "@/lib/format";
@@ -52,17 +70,25 @@ import { fieldTag, firstNameTag } from "@/lib/merge-tags";
 import { getContentWarnings, getPresendChecks } from "@/lib/presend-checks";
 import { readPublishTo } from "@/lib/publish-to";
 import { renderEmail } from "@/lib/render-email";
+import { describeSectionGroup, forReader, hasSections, listSectionGroups, withEmailSections } from "@/lib/sections";
 import { SEGMENT_DELETED } from "@/lib/segments";
+import { describeTestRecipients } from "@/lib/test-email-rules";
 import { toast } from "@/lib/toast";
 import { useCollapsedSidebar } from "@/lib/use-collapsed-sidebar";
+import { useDraftSync } from "@/lib/use-draft-sync";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { usePaywall } from "@/lib/use-paywall";
+import { usePresence } from "@/lib/use-presence";
 import { useSendCampaign } from "@/lib/use-send-campaign";
-import { useToastError } from "@/lib/use-toast-error";
+import { useHasRole } from "@/lib/use-team-role";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
+import { getBodySizeProblem } from "@/lib/validation";
 
 const UPLOADING_MESSAGE = "Wait for images to finish uploading";
+const SEND_BY_ADMIN = "Only the newsletter's admins send and schedule issues. Your draft is saved for them in Campaigns.";
+const NO_FIELDS = [];
+const NO_AUTHORS = [];
 const SUBJECT_MAX = 200;
 // Below lg, as the step bar's classes.
 const COMPACT_SCREEN = "(width < 64rem)";
@@ -73,13 +99,13 @@ export default function FormCampaign({
 	audienceCount,
 	everyoneCount,
 	segments,
-	contactFields = [],
+	contactFields: savedFields = NO_FIELDS,
 	isSegmentDeleted,
 	senderProblem,
 	isSharedSender = false,
 	domainNudge = null,
 	isSendingEnabled,
-	testEmail,
+	testRecipients,
 	sendTimes,
 	archiveUrlBase,
 	planProblem,
@@ -88,8 +114,29 @@ export default function FormCampaign({
 	newContacts,
 	gmailShare = 0,
 	tips: storedTips = [],
+	otherPictures = [],
+	collaboration = null,
+	authors: savedAuthors = NO_AUTHORS,
+	authorSuggestion = null,
 }) {
 	const isHtml = campaign.format === "html";
+	// The newsletter's authors (components/PickerAuthor.jsx) and the draft's, saved as they're picked.
+	const [authors, setAuthors] = useState(savedAuthors);
+	const [authorId, setAuthorId] = useState(campaign.authorId ?? null);
+	const author = authors.find(({ id }) => id === authorId) ?? null;
+	const byline = useMemo(() => getAuthorByline(author, "email"), [author]);
+	const authorPicker = {
+		authors,
+		authorId: author?.id ?? null,
+		suggestion: authorSuggestion,
+		onPick: (id) => setCampaignAuthor(campaign._id, id),
+		onAdd: (values) => addCampaignAuthor(campaign._id, newsletter._id, values),
+		onAuthorsChange: setAuthors,
+		onAuthorChange: setAuthorId,
+	};
+	// The account's fields as the page got them, or as the editor left them once one was added or deleted there.
+	const [editedFields, setEditedFields] = useState(null);
+	const contactFields = editedFields ?? savedFields;
 	const [step, setStep] = useState("write");
 	const [isDiscardOpen, setIsDiscardOpen] = useState(false);
 	const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -102,31 +149,79 @@ export default function FormCampaign({
 		previewText: campaign.previewText,
 		body: initialBody,
 	});
-	const save = useCallback((snapshot) => saveCampaign(campaign._id, { ...snapshot, format }), [campaign._id, format]);
-	const { isDirty, isSaving, savedAt, error, flush } = useAutosave(values, save);
+	const editorRef = useRef(null);
+	// The write step's card, beside which the editor's problems show (components/GutterProblems.jsx).
+	const writeRef = useRef(null);
+	const subjectRef = useRef(null);
+	const previewTextRef = useRef(null);
+	const fieldRefs = useMemo(() => ({ subject: subjectRef, previewText: previewTextRef }), []);
+	const valuesRef = useRef(values);
+	useEffect(() => {
+		valuesRef.current = values;
+	}, [values]);
+	// Checked here too: a server action's request stops at 1 MB, before the save could say what's wrong.
+	const saveDraft = useCallback(
+		(snapshot) => {
+			const sizeProblem = getBodySizeProblem(snapshot.body);
+			return sizeProblem ? { error: sizeProblem } : saveCampaign(campaign._id, { ...snapshot, format });
+		},
+		[campaign._id, format]
+	);
+	const loadSaved = useCallback(() => loadDraft(campaign._id), [campaign._id]);
+	// This instant's, with what the editor hasn't passed on yet.
+	const readValues = useCallback(
+		() => ({
+			subject: subjectRef.current?.value ?? valuesRef.current.subject,
+			previewText: previewTextRef.current?.value ?? valuesRef.current.previewText,
+			body: editorRef.current?.getEditor()?.getHTML() ?? valuesRef.current.body,
+		}),
+		[]
+	);
+	// collaboration: on a newsletter whose team someone joined, the draft's revision. Saves then never write over someone
+	// else's, and the write step shows who else is on it and where.
+	const sync = useDraftSync({
+		revision: collaboration?.revision,
+		format,
+		initialValues: values,
+		editorRef,
+		save: saveDraft,
+		load: loadSaved,
+		read: readValues,
+		show: setValues,
+	});
+	const { isDirty, isSaving, savedAt, error, flush, markSaved } = useAutosave(values, sync.save);
+	const presence = usePresence({
+		campaignId: campaign._id,
+		isEnabled: Boolean(collaboration),
+		rootRef: writeRef,
+		editorRef,
+		fieldRefs,
+		onRevision: (revision) => {
+			if (!isDirty && !isSaving) sync.pull(revision, markSaved);
+		},
+	});
 	// The content check's tips for the draft as it is: the page's, or those a send or a schedule stopped for. A change
 	// hides them, and the next send or schedule checks again.
 	const [knownTips, setKnownTips] = useState(() => ({ values, list: storedTips }));
 	useCollapsedSidebar();
-	const [isTesting, startTesting] = useTransition();
+	const [isTestOpen, setIsTestOpen] = useState(false);
 	const [isWorking, startWorking] = useTransition();
 	const [publishTo, setPublishTo] = useState(() => readPublishTo(campaign));
 	const [isChangingPublishTo, startChangingPublishTo] = useTransition();
 	const isWebOnly = publishTo === "web";
-	const toastError = useToastError();
 	const paywall = usePaywall();
 	const hasPlan = paywall?.hasPlan ?? true;
+	const canSend = useHasRole("admin");
 	const deferredValues = useDeferredValue(values);
 	// The editor's own pictures: an HTML block's code is text.
 	const isUploading = /<img\b[^>]*\ssrc="blob:/.test(values.body);
 	const scheduledAt = campaign.status === "scheduled" ? campaign.scheduledAt : null;
 	const isCompact = useMediaQuery(COMPACT_SCREEN);
 	const rootRef = useRef(null);
-	const editorRef = useRef(null);
-	const subjectRef = useRef(null);
 	const subjectSelectionRef = useRef(null);
-	const previewTextRef = useRef(null);
+	const authorRef = useRef(null);
 	const previewOpenerRef = useRef(null);
+	const testOpenerRef = useRef(null);
 	const scrollsRef = useRef({});
 
 	async function persist() {
@@ -135,25 +230,60 @@ export default function FormCampaign({
 		return false;
 	}
 
+	// The biggest email, every section in, which the checks read; the preview renders each reader's own.
 	const rendered = useMemo(
 		() =>
 			renderEmail({
 				format,
-				html: deferredValues.body,
+				html: format === "rich" ? withEmailSections(deferredValues.body) : deferredValues.body,
 				subject: deferredValues.subject,
 				previewText: deferredValues.previewText,
 				newsletter,
+				author: byline,
 			}),
-		[format, deferredValues, newsletter]
+		[format, deferredValues, newsletter, byline]
 	);
 	const previewHtml = useMemo(() => toPreviewFrame(rendered.html), [rendered.html]);
+	const sections = useSections({ campaignId: campaign._id, segments });
+	const isWithSections = format === "rich" && hasSections(deferredValues.body);
+	// The preview's readers for an issue with sections: as one of its contacts, their tags and segments, or as any reader a
+	// section names, all called Jane. Only its live segments count: one deleted shows its sections to nobody.
+	const sectionPreview = useMemo(() => {
+		if (!isWithSections) return null;
+		const live = new Set(sections.segments.map(({ id }) => id));
+		const groups = listSectionGroups(deferredValues.body).filter(({ kind, value }) => kind === "tag" || live.has(value));
+		const segmentIds = groups.filter(({ kind }) => kind === "segment").map(({ value }) => value);
+		const toSegments = (group) => Object.fromEntries(segmentIds.map((id) => [id, group?.kind === "segment" && group.value === id]));
+		return {
+			segmentIds,
+			sample: { tags: [], segments: toSegments(null) },
+			groups: groups.map((group) => ({
+				id: `${group.kind}:${group.value}`,
+				isGroup: true,
+				name: describeSectionGroup(group, sections.segments),
+				tags: group.kind === "tag" ? [group.value] : [],
+				segments: toSegments(group),
+			})),
+			getHtml: (reader) =>
+				toPreviewFrame(
+					renderEmail({
+						format,
+						html: forReader(deferredValues.body, reader),
+						subject: deferredValues.subject,
+						previewText: deferredValues.previewText,
+						newsletter,
+						author: byline,
+					}).html
+				),
+		};
+	}, [isWithSections, sections.segments, deferredValues, format, newsletter, byline]);
 	// A long issue takes a few milliseconds to read, so it's read apart from typing.
 	const contentWarnings = useMemo(
 		() => getContentWarnings({ ...deferredValues, format, contactFields }),
 		[deferredValues, format, contactFields]
 	);
 	const { checks } = getPresendChecks({
-		campaign: { ...campaign, ...values, publishTo },
+		campaign: { ...campaign, ...values, publishTo, authorId: author?.id ?? null },
 		newsletter,
 		rendered,
 		contactFields,
@@ -162,6 +292,7 @@ export default function FormCampaign({
 		isSendingEnabled,
 		planProblem,
 		contentWarnings,
+		segmentIds: sections.segments.map(({ id }) => id),
 	});
 	const reviewChecks = checks.map((check) => ({ ...check, fix: getCheckFix(check, { newsletterId: newsletter._id }) }));
 	const blocking = [
@@ -206,15 +337,18 @@ export default function FormCampaign({
 		});
 	}
 
-	function sendTest() {
+	// opener: what gets the focus back once the test's dialog closes.
+	function openTest(opener) {
 		if (!hasPlan) return paywall.open("test");
-		startTesting(async () => {
-			if (isUploading) return void toast.error(UPLOADING_MESSAGE);
-			if (!(await persist())) return;
-			const result = await sendTestCampaign(campaign._id);
-			if (result?.error) toastError(result);
-			else toast.success(`Test sent to ${testEmail}`);
-		});
+		testOpenerRef.current = opener;
+		setIsTestOpen(true);
+	}
+
+	// The draft as it is now, saved first.
+	async function sendTest(values) {
+		if (isUploading) return { error: UPLOADING_MESSAGE };
+		if (!(await flush())) return { error: "Couldn't save the draft" };
+		return sendTestCampaign(campaign._id, values);
 	}
 
 	function runAction(action) {
@@ -233,16 +367,19 @@ export default function FormCampaign({
 		window.scrollTo({ top: scrollsRef.current[next] ?? 0 });
 	}
 
-	// words: a tip's or a warning's, selected where the field has them as they are, so typing replaces them.
-	function editField(field, words) {
+	// words: a tip's or a warning's, selected where the field has them as they are, so typing replaces them. problem: a
+	// check of the issue's, which the editor goes to (components/EditorRich.jsx).
+	function editField(field, words, problem) {
 		goToStep("write");
-		if (field === "body" && words && editorRef.current?.select(words)) return;
+		if (field === "body" && (words || problem) && editorRef.current?.reveal({ ...problem, words })) return;
 		const target =
 			field === "subject"
 				? subjectRef.current
 				: field === "previewText"
 					? previewTextRef.current
-					: rootRef.current?.querySelector('[aria-label="Content"]');
+					: field === "author"
+						? authorRef.current
+						: rootRef.current?.querySelector('[aria-label="Content"]');
 		target?.focus({ preventScroll: true });
 		target?.scrollIntoView({ block: "center" });
 		const start = words && typeof target?.value === "string" ? target.value.toLowerCase().indexOf(words.toLowerCase()) : -1;
@@ -316,14 +453,17 @@ export default function FormCampaign({
 	const action = {
 		write: { label: "Next: review", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("review") },
 		review: { label: "Next: send", icon: ArrowRight, isIconAfter: true, onClick: () => goToStep("send") },
-		send: {
-			label: sendAction.label,
-			icon: sendAction.icon,
-			onClick: () => (hasPlan ? sendAction.run() : paywall.open(sendAction.reason)),
-			problems: sending.problems,
-			problemsTitle: sendAction.title,
-			isPending: sending.isPending,
-		},
+		// A team's members write drafts: the newsletter's admins send them.
+		send: canSend
+			? {
+					label: sendAction.label,
+					icon: sendAction.icon,
+					onClick: () => (hasPlan ? sendAction.run() : paywall.open(sendAction.reason)),
+					problems: sending.problems,
+					problemsTitle: sendAction.title,
+					isPending: sending.isPending,
+				}
+			: { label: "Admins send it", icon: Send, onClick: () => toast.message(SEND_BY_ADMIN), problems: [], isPending: false },
 	}[step];
 
 	// Saved shows for a moment after each save, first in every step so a step change doesn't replay it. In the top bar its
@@ -331,9 +471,12 @@ export default function FormCampaign({
 	function renderStatus() {
 		if (error) return <ButtonRetrySave error={error} onRetry={flush} />;
 		const saved = (
-			<span className="lg:flex lg:min-w-14 lg:justify-end">
-				<StatusSaved savedAt={savedAt} />
-			</span>
+			<>
+				<StackCollaborators presence={presence} />
+				<span className="lg:flex lg:min-w-14 lg:justify-end">
+					<StatusSaved savedAt={savedAt} />
+				</span>
+			</>
 		);
 		if (step !== "write") return saved;
 		return (
@@ -356,9 +499,8 @@ export default function FormCampaign({
 	const menu = (
 		<MenuMore
 			isWorking={isWorking}
-			isTesting={isTesting}
 			isTestDisabled={isTestDisabled}
-			onTest={sendTest}
+			onTest={openTest}
 			onPreview={openPreview}
 			onDuplicate={() => runAction(duplicateCampaign)}
 			onDiscard={() => setIsDiscardOpen(true)}
@@ -390,7 +532,7 @@ export default function FormCampaign({
 					/>
 				)}
 
-				<section aria-label="Write" hidden={step !== "write"}>
+				<section ref={writeRef} aria-label="Write" hidden={step !== "write"} className="relative">
 					<div className="overflow-hidden rounded-xl bg-card shadow-border animate-enter">
 						<div className="divide-y divide-border/60 border-b border-border/60">
 							<RowCampaign label="Subject">
@@ -419,6 +561,9 @@ export default function FormCampaign({
 									className="h-11 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
 								/>
 							</RowCampaign>
+							<RowCampaign label="Author">
+								<PickerAuthor ref={authorRef} {...authorPicker} />
+							</RowCampaign>
 						</div>
 						{isHtml ? (
 							<div className="relative">
@@ -433,15 +578,22 @@ export default function FormCampaign({
 								/>
 							</div>
 						) : (
-							<EditorRich
-								ref={editorRef}
-								content={initialBody}
-								onChange={updateBody}
-								contactFields={contactFields}
-								newsletter={newsletter}
-							/>
+							<>
+								<EditorRich
+									ref={editorRef}
+									gutterRef={writeRef}
+									content={initialBody}
+									onChange={updateBody}
+									contactFields={contactFields}
+									onContactFieldsChange={setEditedFields}
+									newsletter={newsletter}
+									sections={sections.context}
+								/>
+								{!isWebOnly && <FooterEmail newsletter={newsletter} />}
+							</>
 						)}
 					</div>
+					{collaboration && <OverlayCollaborators presence={presence} rootRef={writeRef} editorRef={editorRef} fieldRefs={fieldRefs} />}
 				</section>
 
 				<section aria-label="Review" hidden={step !== "review"} className="flex flex-col gap-6">
@@ -449,13 +601,7 @@ export default function FormCampaign({
 						checks={reviewChecks.filter(({ isAccount }) => !isAccount)}
 						renderFix={({ fix }) =>
 							fix && (
-								<ButtonFix
-									fix={fix}
-									onEdit={editField}
-									onTest={sendTest}
-									isTesting={isTesting}
-									isTestDisabled={isTestDisabled}
-								/>
+								<ButtonFix fix={fix} onEdit={editField} onTest={openTest} isTestDisabled={isTestDisabled} />
 							)
 						}
 					/>
@@ -467,10 +613,9 @@ export default function FormCampaign({
 						<ButtonRow
 							icon={FlaskConical}
 							title="Send a test email"
-							description={isTestDisabled ? "Sending is off" : `Goes to ${testEmail}`}
-							onClick={sendTest}
+							description={isTestDisabled ? "Sending is off" : `Goes to ${describeTestRecipients(testRecipients)}`}
+							onClick={(event) => openTest(event.currentTarget)}
 							isDisabled={isTestDisabled}
-							isPending={isTesting}
 						/>
 						<ButtonRow
 							icon={Eye}
@@ -487,6 +632,12 @@ export default function FormCampaign({
 						campaign={campaign}
 						newsletter={newsletter}
 						subject={values.subject}
+						previewText={deferredValues.previewText}
+						body={deferredValues.body}
+						format={format}
+						contactFields={contactFields}
+						otherPictures={otherPictures}
+						onBeforeSave={persist}
 						everyoneCount={everyoneCount}
 						segments={segments}
 						isSegmentDeleted={isSegmentDeleted}
@@ -528,7 +679,26 @@ export default function FormCampaign({
 				previewText={deferredValues.previewText}
 				newsletterId={newsletter._id}
 				contactFields={contactFields}
+				sections={sectionPreview}
 			/>
+			<DialogSendTest
+				isOpen={isTestOpen}
+				onOpenChange={setIsTestOpen}
+				onCloseAutoFocus={(event) => {
+					event.preventDefault();
+					testOpenerRef.current?.focus();
+				}}
+				newsletterId={newsletter._id}
+				defaultRecipients={testRecipients}
+				description="Sends this draft as it is now, with [Test] before its subject."
+				contactHint={
+					isWithSections
+						? "The email as this contact gets it: their first name, fields and sections."
+						: "The email as this contact gets it, with their first name and fields."
+				}
+				onSend={sendTest}
+			/>
+			<DialogSegment {...sections.dialog} newsletterId={newsletter._id} />
 			<DialogDiscardCampaign
 				id={campaign._id}
 				subject={values.subject}
@@ -630,8 +800,8 @@ function ButtonInsertTag({ contactFields, onInsert }) {
 }
 
 // The test and the preview from any step. A dialog opened from here keeps the focus the menu would give back to its
-// button as it closes; the preview hands it to that button once it closes, as the item that opened it is gone.
-function MenuMore({ isWorking, isTesting, isTestDisabled, onTest, onPreview, onDuplicate, onDiscard }) {
+// button as it closes; the test and the preview hand it to that button once they close, as the item that opened them is gone.
+function MenuMore({ isWorking, isTestDisabled, onTest, onPreview, onDuplicate, onDiscard }) {
 	const triggerRef = useRef(null);
 	const isOpeningDialogRef = useRef(false);
 
@@ -654,8 +824,8 @@ function MenuMore({ isWorking, isTesting, isTestDisabled, onTest, onPreview, onD
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" onCloseAutoFocus={keepDialogFocus} className="w-52">
-				<DropdownMenuItem onSelect={onTest} disabled={isTestDisabled || isTesting}>
-					{isTesting ? <Loader2 className="animate-spin" /> : <FlaskConical />}
+				<DropdownMenuItem onSelect={() => openDialog(() => onTest(triggerRef.current))} disabled={isTestDisabled}>
+					<FlaskConical />
 					Send a test email
 				</DropdownMenuItem>
 				<DropdownMenuItem onSelect={() => openDialog(() => onPreview(triggerRef.current))}>
@@ -685,10 +855,10 @@ function BarAction({ action, status, onEdit, side = "bottom", className }) {
 	const Icon = action.icon;
 	const problems = action.problems ?? [];
 
-	function fix(field) {
+	function fix(field, words, problem) {
 		isFixingRef.current = true;
 		setIsOpen(false);
-		onEdit(field);
+		onEdit(field, words, problem);
 	}
 
 	function returnFocus(event) {
@@ -737,7 +907,7 @@ function BarAction({ action, status, onEdit, side = "bottom", className }) {
 	);
 }
 
-function ButtonFix({ fix, onEdit, onTest, isTesting, isTestDisabled }) {
+function ButtonFix({ fix, onEdit, onTest, isTestDisabled }) {
 	if (fix.href) {
 		return (
 			<Button asChild variant="outline" size="sm">
@@ -747,24 +917,24 @@ function ButtonFix({ fix, onEdit, onTest, isTesting, isTestDisabled }) {
 	}
 	if (fix.action === "test") {
 		return (
-			<Button variant="outline" size="sm" onClick={onTest} disabled={isTestDisabled || isTesting} className="min-w-24">
-				{isTesting ? <Loader2 className="animate-spin" /> : fix.label}
+			<Button variant="outline" size="sm" onClick={(event) => onTest(event.currentTarget)} disabled={isTestDisabled} className="min-w-24">
+				{fix.label}
 			</Button>
 		);
 	}
 	return (
-		<Button variant="outline" size="sm" onClick={() => onEdit(fix.field, fix.words)}>
+		<Button variant="outline" size="sm" onClick={() => onEdit(fix.field, fix.words, fix.problem)}>
 			{fix.label}
 		</Button>
 	);
 }
 
-function ButtonRow({ icon: Icon, title, description, onClick, isDisabled = false, isPending = false }) {
+function ButtonRow({ icon: Icon, title, description, onClick, isDisabled = false }) {
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			disabled={isDisabled || isPending}
+			disabled={isDisabled}
 			className="group/row flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/40 disabled:pointer-events-none disabled:opacity-50"
 		>
 			<span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -774,13 +944,53 @@ function ButtonRow({ icon: Icon, title, description, onClick, isDisabled = false
 				<span className="block text-sm font-medium">{title}</span>
 				<span className="block truncate text-sm text-muted-foreground">{description}</span>
 			</span>
-			{isPending ? (
-				<Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-			) : (
-				<ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover/row:translate-x-0.5" />
-			)}
+			<ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover/row:translate-x-0.5" />
 		</button>
 	);
+}
+
+// What the editor's sections pick from (components/BlockSection.jsx): the newsletter's segments, with one made here
+// until the page brings it back; every tag and segment with how many of the draft's readers each picks, null when
+// that can't be read; how many of them a tag or a segment picks, or everyone without one, null for a segment the
+// newsletter doesn't have; and the segment editor, whose new segment the section picks.
+function useSections({ campaignId, segments }) {
+	const router = useRouter();
+	const [made, setMade] = useState([]);
+	const [picking, setPicking] = useState(null);
+	const all = useMemo(() => [...segments, ...made.filter(({ id }) => !segments.some((segment) => segment.id === id))], [segments, made]);
+
+	const countAll = useCallback(async () => {
+		const result = await countAllSectionReaders(campaignId).catch(() => null);
+		return result && !result.error ? result : null;
+	}, [campaignId]);
+
+	const countReaders = useCallback(
+		async (group) => {
+			const result = await countSectionReaders(campaignId, group ? [group] : []).catch(() => null);
+			const readers = group ? result?.groups?.[0]?.readers : result?.readers;
+			return result && !result.error && typeof readers === "number" ? { readers: result.readers, count: readers } : null;
+		},
+		[campaignId]
+	);
+
+	const context = useMemo(
+		() => ({ segments: all, countAll, countReaders, newSegment: (onSaved) => setPicking({ onSaved }) }),
+		[all, countAll, countReaders]
+	);
+
+	return {
+		context,
+		segments: all,
+		dialog: {
+			open: Boolean(picking),
+			onOpenChange: (open) => !open && setPicking(null),
+			onSaved: (id, name) => {
+				setMade((current) => [...current, { id, name, description: "" }]);
+				picking?.onSaved(id);
+				router.refresh();
+			},
+		},
+	};
 }
 
 // Stays until a save goes through, unlike Saved.

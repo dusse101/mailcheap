@@ -45,8 +45,8 @@ const COUNT_DELAY_MS = 350;
 const OTHER_SOURCE = "__other";
 
 // The segment editor: a name, conditions met all or any, and how many active contacts they pick now. Saved, it shows
-// the segment's contacts; the send step passes onSaved to pick it for the campaign instead. segment: { id, name, match,
-// conditions, contacts } to edit one.
+// the segment's contacts; the send step and the editor's sections pass onSaved(id, name) to pick it instead. segment:
+// { id, name, match, conditions, contacts } to edit one.
 export default function DialogSegment({ newsletterId, segment = null, trigger, open, onOpenChange, onSaved }) {
 	const [isOpenHere, setIsOpenHere] = useState(false);
 	const isOpen = open ?? isOpenHere;
@@ -59,9 +59,9 @@ export default function DialogSegment({ newsletterId, segment = null, trigger, o
 				<FormSegment
 					newsletterId={newsletterId}
 					segment={segment}
-					onSaved={(id) => {
+					onSaved={(id, name) => {
 						setIsOpen(false);
-						onSaved?.(id);
+						onSaved?.(id, name);
 					}}
 					isPicking={Boolean(onSaved)}
 					onDeleted={() => setIsOpen(false)}
@@ -133,7 +133,7 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 			const result = await saveSegment(segment?.id ?? null, { newsletterId, name: name.trim(), ...rules });
 			if (result?.error) return void toast.error(result.error);
 			toast.success(segment ? "Segment saved" : "Segment created");
-			onSaved(result.id);
+			onSaved(result.id, name.trim());
 			if (!isPicking) router.push(`/contacts/segments/${result.id}`, { scroll: false });
 		});
 	}
@@ -153,8 +153,9 @@ function FormSegment({ newsletterId, segment, onSaved, isPicking, onDeleted }) {
 		<form onSubmit={save} className="flex flex-col gap-5">
 			<DialogHeader>
 				<DialogTitle>{segment ? "Edit segment" : "New segment"}</DialogTitle>
-				<DialogDescription>
-					Contacts who meet these conditions, kept up to date. <LinkHelp article="contacts" section="segments" />
+				<DialogDescription className="text-pretty">
+					A segment groups the contacts who meet these conditions, like those who opened lately, and keeps up to date as they
+					change. Send a campaign to it, or see how its people read. <LinkHelp article="contacts" section="segments" />
 				</DialogDescription>
 			</DialogHeader>
 

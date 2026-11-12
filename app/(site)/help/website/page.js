@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import FigureHelp from "@/components/FigureHelp";
 import LinkApp from "@/components/LinkApp";
 import { isBotIdEnabled } from "@/lib/bot-check";
 import { getArchiveCnameTarget, getSharedDomain, isCloud } from "@/lib/config";
@@ -43,8 +44,9 @@ export default function WebsitePage() {
 				engines get a sitemap of your issues, and each page has its own picture for when it&apos;s shared.
 			</p>
 			<p>
-				Its fonts, colors and shapes are your newsletter&apos;s theme, the same as in your emails.{" "}
-				<Link href={getHelpHref("design")}>Design and themes</Link>
+				Its fonts, colors and shapes are your newsletter&apos;s theme, as in your emails. Readers get its light or dark colors, the
+				ones their device uses, and switch between System, Light and Dark at the bottom of every page.{" "}
+				<Link href={getHelpHref("design", "dark-mode")}>Design and themes</Link>
 			</p>
 
 			{hasOwnHost && (
@@ -100,23 +102,71 @@ export default function WebsitePage() {
 				</>
 			)}
 
+			<h2 id="analytics">Analytics</h2>
+			<p>
+				Your website can load Google Analytics, Google Tag Manager and the Meta pixel: paste their IDs in the Analytics card of the{" "}
+				<LinkApp href="/newsletters/website">Website section</LinkApp>, and each signup on your website reaches them as an event.{" "}
+				<Link href={getHelpHref("website-analytics")}>Website analytics</Link>
+			</p>
+
 			<h2 id="issue-pages">Issue pages</h2>
 			<p>
 				Every issue on your website gets a page at <code>/p/</code> followed by its slug, made from the subject. Change the slug in
-				the send step&apos;s Web page row before it goes out, or later from the campaign&apos;s page. There you can also pin an issue:
-				pinned issues lead the home page, in its Featured row.
+				the send step&apos;s On your website card before it goes out, or later in the Website tab of the campaign&apos;s page or in
+				its web page&apos;s editor. Both pin it too, with Pin to top: pinned issues lead the home page, in its Featured row.
+			</p>
+			<p>
+				The page, its card on your website and its link previews, on X, LinkedIn or in a message, show the issue&apos;s subject,
+				its preview text and its first picture. In the send step&apos;s On your website card, pick another of its pictures, upload
+				one, or use the card MailCheap draws with the title, and give the page a title and a description of its own: a subject
+				written for the inbox can have a title written for the web. Left empty, they stay the subject and the preview text. When
+				several issues start with the same picture, like a banner, their cards on your website show the drawn card instead, unless
+				you pick that picture for them.
+			</p>
+			<p>
+				Under its title, the page says who wrote it: &ldquo;By&rdquo; and the name of the issue&apos;s{" "}
+				<Link href={getHelpHref("writing", "author")}>author</Link>, after their picture, when they show on the web. Otherwise, your
+				From name and photo, linked to your author page. An author&apos;s email never shows.
 			</p>
 			<p>
 				The send step decides where each issue goes. An email-only issue never gets a page, and a web-only issue goes on the
 				website without an email.{" "}
 				<Link href={getHelpHref("sending", "where")}>Email, web or both</Link>
 			</p>
+			<p>
+				An issue&apos;s page has its <Link href={getHelpHref("writing", "sections")}>sections</Link> set to show on the web, for every
+				visitor, and none set to email only. Your website doesn&apos;t know who&apos;s reading, so a section for some readers stays in
+				their emails unless you put it on the web too. Its share picture comes from the page, never from an email-only section.
+			</p>
+
+			<h2 id="edit-page">Changing a page after it&apos;s out</h2>
+			<p>
+				Edit web page, at the top of a sent issue&apos;s page or in its <strong>⋯</strong> menu in your{" "}
+				<LinkApp href="/campaigns">campaigns</LinkApp>, opens its page in the editor: its title and description at the top, as the
+				page shows them, then its content. Beside them, its card as your website and link previews show it, with its picture to
+				pick, its address, and Pin to top. Preview shows the page as your website will, on a desktop or a phone, in your
+				website&apos;s theme. Update page puts your changes on your website at once, and the email stays as it was sent, in
+				inboxes and in its report. Readers who click Read online in it see the page as it is now.
+			</p>
+			<FigureHelp
+				src="/help/website/web-page.webp"
+				alt="A sent issue's web page in the editor: its title and description over its content, and beside them its card as link previews show it, its pictures to pick from, its address, Pin to top and Remove from website."
+				caption="Changing an issue's page"
+			/>
+			<p>
+				It&apos;s also how a page can differ from its email: take out what only fits an inbox, like a banner or a line asking to
+				reply, add a link, or fix a typo. Restore the email&apos;s content, in the page&apos;s <strong>⋯</strong> menu, brings the
+				email&apos;s back.
+				{isCloud() &&
+					" The content check reads each change before it goes live: one it would hold stays off your website, and the page keeps what it showed."}{" "}
+				AI assistants and the API change pages too, with update_campaign_archive.
+			</p>
 
 			<h2 id="remove-issue">Removing an issue</h2>
 			<p>
-				Remove from website, in an issue&apos;s <strong>⋯</strong> menu on the <LinkApp href="/campaigns">Campaigns page</LinkApp>{" "}
-				or on its own page, takes it off your website: its page stops working, and it leaves the home page and the sitemap. This
-				can&apos;t be undone.
+				Remove from website, in an issue&apos;s <strong>⋯</strong> menu on the <LinkApp href="/campaigns">Campaigns page</LinkApp>, on
+				its own page or in its web page&apos;s editor, takes it off your website: its page stops working, and it leaves the home
+				page and the sitemap. This can&apos;t be undone.
 			</p>
 			<p>
 				An issue you also sent by email stays in your campaigns with its report, as email only, and the Read online link in its
@@ -138,12 +188,15 @@ export default function WebsitePage() {
 				<li>
 					<strong>From your own code</strong>: create an API key with the signups only level on the{" "}
 					<LinkApp href="/api-keys">API keys page</LinkApp>, then sign people
-					up with one request each. That key can only add contacts, so it&apos;s safe in your website&apos;s code. See{" "}
-					<Link href="/docs/api#add-contact">add a contact</Link> in the API reference.
+					up with one request each. A request can tag them too, like <code>blog</code> from your blog&apos;s form, so a{" "}
+					<Link href={getHelpHref("contacts", "segments")}>segment</Link> can pick them. That key can only add contacts, so
+					it&apos;s safe in your website&apos;s code. See <Link href="/docs/api#add-contact">add a contact</Link> in the API
+					reference.
 				</li>
 				<li>
-					<strong>By hand or from a file</strong>: on the <LinkApp href="/contacts">Contacts page</LinkApp>.{" "}
-					<Link href={getHelpHref("contacts")}>Contacts</Link>
+					<strong>By hand or from a file</strong>: Add contacts, at the top of the{" "}
+					<LinkApp href="/contacts">Contacts page</LinkApp>, lists every way to add them.{" "}
+					<Link href={getHelpHref("contacts", "add")}>Adding contacts</Link>
 				</li>
 			</ul>
 			<p>
@@ -156,10 +209,21 @@ export default function WebsitePage() {
 			<h2 id="form-on-your-site">A signup form on your own site</h2>
 			<p>
 				Turn on <LinkApp href="/newsletters/form">Form for your site</LinkApp> in the{" "}
-				<Link href={getHelpHref("newsletters")}>newsletter&apos;s settings</Link>, save, then copy one of its two codes to the spot
-				on your site where the form goes:
+				<Link href={getHelpHref("newsletters")}>newsletter&apos;s settings</Link>, save, then copy one of the three tabs under Code to
+				paste:
 			</p>
+			<FigureHelp
+				src="/help/website/code-to-paste.webp"
+				alt="Code to paste on the AI agent tab, next to the Script and HTML tabs: the prompt's first lines, which ask the agent to add the newsletter's signup form, between Copy and Show more."
+				caption="The prompt for your AI agent"
+			/>
 			<ul>
+				<li>
+					<strong>AI agent</strong>: a prompt for the AI agent that builds your site, like Cursor, Claude Code, Codex or Lovable. It
+					tells your agent what MailCheap is and gives it the script and the HTML form, with when each fits, so it picks the one
+					that fits your site and adds the form there. Once it&apos;s done, it reminds you of what&apos;s left: turning the form on,
+					if it&apos;s off, and listing your site under Where it works.
+				</li>
 				<li>
 					<strong>Script</strong>: the form in your newsletter&apos;s theme. It says what happened without leaving the page, and what
 					you change in its settings reaches your site on its own.
@@ -173,7 +237,8 @@ export default function WebsitePage() {
 			<p>
 				Inline is the email field and its button alone. Card puts them in a box under a headline and a line of text: they start as
 				your newsletter&apos;s name and description, and follow them until you write your own. Clear one to hide it. Turn on First
-				name to ask for it above the email, so <code>{"{{first_name}}"}</code> can greet new readers; they can leave it empty.
+				name to ask for it above the email, so <code>{"{{first_name|there}}"}</code> can greet new readers by it; they can leave it
+				empty. <Link href={getHelpHref("writing", "first-name")}>Names and fields in your emails</Link>
 			</p>
 			<p>Where to paste it:</p>
 			<ul>
@@ -200,6 +265,10 @@ export default function WebsitePage() {
 				</li>
 				<li>
 					<strong>Any other site</strong>: wherever it lets you add HTML.
+				</li>
+				<li>
+					<strong>React, Next.js, Vue or Svelte</strong>: a script tag in a component doesn&apos;t stay where it sits, so give your
+					AI agent the prompt, which says how to add the form there.
 				</li>
 			</ul>
 			<p>

@@ -101,7 +101,6 @@ test("the reminder asks them to confirm, with a fresh link, and does not describ
 	assert.match(content.previewText, /only reminder/);
 	assert.match(content.markdown, /Please confirm your subscription/);
 	assert.match(content.markdown, /You stay off the list/);
-	assert.equal(/one click/i.test(`${content.previewText} ${content.markdown}`), false, "the confirm page has its own button");
 	assert.equal(/porch|380|nudge/i.test(`${content.subject} ${content.markdown}`), false, "the brand's jokes stay in the brand");
 	assert.match(content.markdown, /won't receive Taco & Tell until you confirm/);
 	assert.match(content.markdown, /only reminder/);
@@ -139,9 +138,9 @@ test("the brand's reminder is its own copy, exactly, and repaints the button", a
 			content.markdown,
 			`**So close.**
 
-Your Taco & Tell signup isn’t confirmed yet. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser. It takes less time than a red light on 380.
+Your Taco & Tell signup isn’t confirmed yet. Tap the button below and you’re in. It takes less time than a red light on 380.
 
-<a href="${CONFIRM_URL_PLACEHOLDER}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;">Open my confirmation page</a>
+<a href="${CONFIRM_URL_PLACEHOLDER}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;">Confirm my subscription</a>
 
 Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge you’ll get from us.`
 		);
@@ -153,9 +152,9 @@ Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge
 		});
 		const visible = `So close.
 
-Your Taco & Tell signup isn’t confirmed yet. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser. It takes less time than a red light on 380.
+Your Taco & Tell signup isn’t confirmed yet. Tap the button below and you’re in. It takes less time than a red light on 380.
 
-Open my confirmation page (${CONFIRM_URL_PLACEHOLDER})
+Confirm my subscription (${CONFIRM_URL_PLACEHOLDER})
 
 Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge you’ll get from us.`;
 		assert.ok(email.text.startsWith(`${visible}\n\n`), email.text);
@@ -163,9 +162,9 @@ Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge
 		assert.match(email.html, /<p><strong>So close\.<\/strong><\/p>/);
 		assert.match(
 			email.html,
-			/<p>Your Taco &amp; Tell signup isn’t confirmed yet\. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser\. It takes less time than a red light on 380\.<\/p>/
+			/<p>Your Taco &amp; Tell signup isn’t confirmed yet\. Tap the button below and you’re in\. It takes less time than a red light on 380\.<\/p>/
 		);
-		assert.match(email.html, /<a href="\{\{confirm_url\}\}"[^>]*>Open my confirmation page<\/a>/);
+		assert.match(email.html, /<a href="\{\{confirm_url\}\}"[^>]*>Confirm my subscription<\/a>/);
 		assert.match(email.html, /<p>Didn’t sign up\? Ignore this\. You stay off the list, and this is the last nudge you’ll get from us\.<\/p>/);
 		assert.match(email.html, /<title>Your Taco &amp; Tell signup is still on the porch<\/title>/);
 		assert.match(email.html, /data-preheader>You&#39;re not on the list until you confirm\. This is the only reminder\./);
@@ -173,17 +172,16 @@ Didn’t sign up? Ignore this. You stay off the list, and this is the last nudge
 		assert.equal(email.html.includes("#18181b"), false, "not the stock one");
 		for (const part of [content.markdown, email.html, email.text]) {
 			assert.equal(/one button short/i.test(part), false);
-			assert.equal(part.includes("Confirm my subscription"), false);
 		}
 	});
 });
 
 test("the built-in confirmation keeps its stock line, and the brand's doesn't promise silence", async () => {
 	const stock = await withEnv({ EMAIL_BRAND: "" }, () => getConfirmationContent({ name: "Field notes" }));
-	assert.match(stock.markdown, /you won't hear from us again/);
+	assert.match(stock.html, /you won't hear from us again/);
 	const branded = await withEnv({ EMAIL_BRAND: "tacoandtell" }, () => getConfirmationContent({ name: "Taco & Tell" }));
-	assert.match(branded.markdown, /Ignore this email and you stay off the list\.$/);
-	assert.equal(/won't hear from us/.test(branded.markdown), false);
+	assert.match(branded.html, /Ignore this email and you stay off the list\.<\/p>$/);
+	assert.equal(/won't hear from us/.test(branded.html), false);
 });
 
 const RULE_NOW = new Date("2026-11-20T12:00:00.000Z");

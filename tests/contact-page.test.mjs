@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { getContactHistory } from "../lib/contact-history.js";
 import { flagUrl, getCountryName, readCountry } from "../lib/countries.js";
 import { getClickUrl } from "../lib/tracking.js";
-import { activate, as, callApi, catchNotFound, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addAuthor, as, callApi, catchNotFound, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 import { runWithRequest } from "./stubs/next-headers.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 
@@ -141,6 +141,7 @@ describe("the contact page and its data", () => {
 			catchRedirect(m.newsletters.saveNewsletter(null, form({ name: `${user.slug} news`, slug: user.slug, postalAddress: "1 Main St, Paris", archiveEnabled: "on", ...fields })))
 		);
 		user.newsletterId = url.split("/").at(-1);
+		await addAuthor(user);
 		user.key = (await as(user, () => m.apiKeys.createApiKey(null, form({ name: "Full", level: "full" })))).key;
 		return user;
 	}
@@ -309,10 +310,9 @@ describe("the contact page and its data", () => {
 		assert.ok(html.includes("France") && html.includes("https://flagcdn.com/fr.svg"), "their country, with its flag");
 		assert.ok(html.includes("animate-globe-pulse"), "on the globe");
 		const header = html.match(/<header[^>]*>([\s\S]*?)<\/header>/)[1];
-		assert.match(header, /<span class="sr-only">Status: <\/span>.*?Active/, "their status, a button at the top next to Edit fields");
-		assert.ok(header.includes("Edit fields") && header.includes("Edit tags"), "fields and tags, each with its own dialog");
-		assert.ok(header.includes('aria-label="More"'), "a ⋯ menu after them");
-		assert.ok(!header.includes("Delete contact"), "deleting is in it, not a button of its own");
+		assert.match(header, /<span class="sr-only">Status: <\/span>.*?Active/, "their status, a button at the top");
+		assert.ok(header.includes('aria-label="More"'), "a ⋯ menu next to it");
+		assert.doesNotMatch(header, /Edit fields|Edit tags|Delete contact/, "editing and deleting are in it, not buttons of their own");
 		const tabs = [...html.matchAll(/<button([^>]*role="tab"[^>]*)>([\s\S]*?)<\/button>/g)].map(([, attributes, inner]) => [
 			inner.replace(/<[^>]+>/g, ""),
 			attributes.includes('aria-selected="true"'),

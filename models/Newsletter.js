@@ -11,7 +11,11 @@ const newsletterSchema = new mongoose.Schema(
 		imageUrl: { type: String, trim: true },
 		fromName: { type: String, trim: true },
 		fromEmail: { type: String, required: true, lowercase: true, trim: true },
+		// Where replies to its emails go while it has no author (lib/sender-rules.js resolveFrom), as set before authors.
 		replyTo: { type: String, lowercase: true, trim: true },
+		// The author its new issues start with, whose address gets the replies to its own emails (lib/authors.js): its
+		// first author until another is picked on its Sender page.
+		defaultAuthorId: { type: mongoose.Schema.Types.ObjectId, ref: "Author" },
 		// Without one, emails print the server's default (lib/postal-address.js), unless the owner saved it empty.
 		postalAddress: { type: String, trim: true },
 		postalAddressCleared: { type: Boolean },
@@ -56,6 +60,14 @@ const newsletterSchema = new mongoose.Schema(
 			bio: { type: String, trim: true },
 			imageUrl: { type: String, trim: true },
 		},
+		// The analytics tools its website loads, each by its ID alone (lib/website-analytics.js).
+		analytics: {
+			googleAnalytics: { type: String, trim: true },
+			googleTagManager: { type: String, trim: true },
+			metaPixel: { type: String, trim: true },
+		},
+		// Its own HTML for the head of its website's pages, only ever sent on its own domain (lib/website-code.js).
+		customCode: { type: String },
 		// New signups get an email with a link and only join once they click it (confirmed opt-in).
 		requireConfirmation: { type: Boolean, default: false },
 		// Checked when an issue is sent (lib/cleanup.js). Empty numbers use the newsletter's defaults.
@@ -64,22 +76,40 @@ const newsletterSchema = new mongoose.Schema(
 			issues: { type: Number, min: 1 },
 			days: { type: Number, min: 1 },
 		},
+		// Its own emails (lib/newsletter-emails.js), each written in the editor (format rich, in html) or in Markdown, as
+		// they were before it and as the API takes them.
 		welcome: {
 			enabled: { type: Boolean, default: false },
 			subject: { type: String, trim: true },
 			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
 			markdown: { type: String },
+			html: { type: String },
 		},
 		// The newsletter's own confirmation email; the built-in one goes out until it has one.
 		confirmation: {
 			subject: { type: String, trim: true },
 			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
 			markdown: { type: String },
+			html: { type: String },
 		},
-		// The content check of its own welcome and confirmation emails (lib/signup-email-review.js), each of the content it
-		// read. Apart from welcome and confirmation, which a save replaces whole.
+		// The newsletter's own last-chance email for its list cleanup (lib/last-chance-content.js); the built-in one goes out
+		// until it has one.
+		lastChance: {
+			subject: { type: String, trim: true },
+			previewText: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "rich"] },
+			markdown: { type: String },
+			html: { type: String },
+		},
+		// The content check of its own welcome, confirmation and last-chance emails (lib/signup-email-review.js), each of the
+		// content it read. Apart from the emails, which a save replaces whole.
 		reviews: {
-			type: new mongoose.Schema({ welcome: contentReviewSchema, confirmation: contentReviewSchema }, { _id: false }),
+			type: new mongoose.Schema(
+				{ welcome: contentReviewSchema, confirmation: contentReviewSchema, lastChance: contentReviewSchema },
+				{ _id: false }
+			),
 			select: false,
 		},
 		// The signup form its owner pastes on their own site (lib/signup-form.js), off until they turn it on. No domains:
@@ -113,20 +143,27 @@ const newsletterSchema = new mongoose.Schema(
 			at: { type: Date },
 		},
 		// Its get-started panel (lib/get-started.js), closed by its owner or finished: either hides it for good, on every
-		// device. The account's other newsletters keep theirs.
+		// device. The account's other newsletters keep theirs. themeChosenAt: a theme preset picked, MailCheap's own
+		// included, which does the panel's design step.
 		getStarted: {
 			dismissedAt: { type: Date },
 			finishedAt: { type: Date },
+			themeChosenAt: { type: Date },
 		},
 		// Its look on its website and in its emails (lib/themes.js): a preset, and only what was changed on top of it.
+		// lightColors and darkColors: each mode's palette changes. colors: the mode the preset is made for's, as themes
+		// were saved before they had two; the next save of the theme moves them.
 		theme: {
 			preset: { type: String, trim: true },
 			colors: { background: { type: String }, text: { type: String }, accent: { type: String } },
+			lightColors: { background: { type: String }, text: { type: String }, accent: { type: String } },
+			darkColors: { background: { type: String }, text: { type: String }, accent: { type: String } },
 			fonts: { heading: { type: String }, body: { type: String } },
 			headingWeight: { type: Number },
 			radius: { type: String },
 			shadow: { type: String },
 			spacing: { type: String },
+			emailAlign: { type: String },
 		},
 	},
 	{ timestamps: true }

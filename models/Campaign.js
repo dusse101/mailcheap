@@ -17,6 +17,9 @@ const campaignSchema = new mongoose.Schema(
 		format: { type: String, enum: ["markdown", "html", "rich"], default: "rich" },
 		markdown: { type: String, default: "" },
 		html: { type: String, default: "" },
+		// One more each time its subject, preview text or content changes: a change made from an earlier revision is
+		// refused, so two people on a draft never write over each other (lib/draft-merge.js). Unset counts as 0.
+		revision: { type: Number },
 		status: { type: String, enum: CAMPAIGN_STATUSES, default: "draft" },
 		// By email and on the website, by email only, or on the website only (lib/publish-to.js). Web only sends nothing:
 		// it goes straight to sent, with no messages.
@@ -32,6 +35,16 @@ const campaignSchema = new mongoose.Schema(
 		// Only this segment's active contacts get it, its conditions read at each send (lib/segments.js). Without one,
 		// every active contact does.
 		segmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Segment" },
+		// Who wrote it (models/Author.js). Issues from before authors have none and go out as they did.
+		authorId: { type: mongoose.Schema.Types.ObjectId, ref: "Author" },
+		// The author as its send started: every email of the send shows them as the content check read them, whatever
+		// changes on the author after. Its page shows the author as they are now.
+		sentAuthor: {
+			name: { type: String },
+			email: { type: String },
+			imageUrl: { type: String },
+			showInEmails: { type: Boolean },
+		},
 		// Contacts never mailed before go out in steps (lib/first-send.js): how many each step sends, the last the rest,
 		// the step out so far, the first's size, how many still wait, when the next check is, and when the last one passed.
 		// Sends from before had a single slice, and restHours in a spread send.
@@ -56,7 +69,20 @@ const campaignSchema = new mongoose.Schema(
 		finishedAt: { type: Date },
 		testSentAt: { type: Date },
 		archiveSlug: { type: String, trim: true, lowercase: true },
+		// The first picture its website shows, from the content.
 		thumbnailUrl: { type: String, trim: true },
+		// Its page on the website where it differs from the email (lib/web-page.js): the title, description and picture shown
+		// there, the picture an https:// address or "card" for the card MailCheap draws, and once the page is out, content of
+		// its own, which leaves the email as it was sent. editedAt: when a page that was out last changed its words.
+		web: {
+			title: { type: String, trim: true },
+			description: { type: String, trim: true },
+			image: { type: String, trim: true },
+			format: { type: String, enum: ["markdown", "html", "rich"] },
+			markdown: { type: String },
+			html: { type: String },
+			editedAt: { type: Date },
+		},
 		// Unlisted issues keep their /p/slug page but stay off the archive index.
 		archiveListed: { type: Boolean, default: true },
 		// Pinned issues sit in the Featured row at the top of the archive.
@@ -67,12 +93,16 @@ const campaignSchema = new mongoose.Schema(
 		review: { type: contentReviewSchema, select: false },
 		// The same check at the review step, before any send: a send of the content it read uses it as its own.
 		draftReview: { type: contentReviewSchema, select: false },
+		// The check of its page's latest change once it was out, which went live unless the check would hold it.
+		webReview: { type: contentReviewSchema, select: false },
 		stats: {
 			recipients: counter,
 			sent: counter,
 			delivered: counter,
 			bounced: counter,
 			complained: counter,
+			// Refused by Gmail as likely unsolicited (models/Message.js refusedAt), still counted as sent.
+			refused: counter,
 			opened: counter,
 			clicked: counter,
 			unsubscribed: counter,
@@ -91,6 +121,7 @@ const campaignSchema = new mongoose.Schema(
 			delivered: counter,
 			bounced: counter,
 			complained: counter,
+			refused: counter,
 			failed: counter,
 			dormant: counter,
 		},

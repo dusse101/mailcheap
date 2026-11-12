@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { formatLinkUrl, getLinkKey, getLinkLabels, isSystemLink, normalizeLink } from "../lib/link-stats.js";
 import { getClickUrl, readClickToken } from "../lib/tracking.js";
-import { activate, as, catchRedirect, form, jsonRequest, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addAuthor, as, catchRedirect, form, jsonRequest, signIn, startTestApp } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 import { published } from "./stubs/qstash.mjs";
 import { sent as sesEmails } from "./stubs/ses.mjs";
@@ -96,9 +96,13 @@ describe("clicks per link", () => {
 			sendBatchRoute: await import("../app/api/jobs/send-batch/route.js"),
 			clickRoute: await import("../app/c/[token]/route.js"),
 			actions: (await import("../lib/actions/campaigns.js")).campaignActions,
+			findCampaignLinks: (await import("../lib/campaign-links.js")).findCampaignLinks,
+			CampaignReport: (await import("../components/CampaignReport.jsx")).default,
+			ButtonClickMap: (await import("../components/ButtonClickMap.jsx")).default,
 			Campaign: (await import("../models/Campaign.js")).default,
 			CampaignLink: (await import("../models/CampaignLink.js")).default,
 			Message: (await import("../models/Message.js")).default,
+			Newsletter: (await import("../models/Newsletter.js")).default,
 		};
 	});
 
@@ -117,6 +121,7 @@ describe("clicks per link", () => {
 			)
 		);
 		user.newsletterId = url.split("/").at(-1);
+		await addAuthor(user);
 		const rows = Array.from({ length: contacts }, (_, index) => ({ email: `reader${index}@${slug}.example.org`, status: "active" }));
 		await as(user, () => m.contacts.importContacts({ newsletterId: user.newsletterId, consent: true, rows }));
 		return user;
@@ -152,6 +157,13 @@ describe("clicks per link", () => {
 	async function report(user, id) {
 		const action = m.actions.find(({ name }) => name === "get_campaign_report");
 		return action.output.parse(await action.handler({ account: user.account, input: { id } }));
+	}
+
+	// The first element of a type in a rendered tree, through each element's props: its children and the elements it's given.
+	function findElement(node, type) {
+		if (Array.isArray(node)) return node.reduce((found, child) => found ?? findElement(child, type), null);
+		if (!node?.props) return null;
+		return node.type === type ? node : findElement(Object.values(node.props), type);
 	}
 
 	test("a reader's clicks count once per link and once per issue; repeats only add clicks; scanners count for nothing", async () => {
@@ -198,6 +210,45 @@ describe("clicks per link", () => {
 		assert.equal(hours.reduce((sum, { clicks }) => sum + clicks, 0), 2);
 		assert.ok(hours.every(({ at }) => new Date(at) <= new Date()), "no hours to come");
 		assert.equal(result.comparison, null, "a first issue has nothing to compare with");
+	});
+
+	test("the report's click map gets each clicked link's count, and the key of its clicks on every link its email has", async () => {
+		const user = await customer("clickmap@example.com", 2);
+		const { id, emails } = await sendIssue(
+			user,
+			`<p><a href="https://example.com/story?utm_source=mailcheap">The story</a> and <a href="https://example.com/shop">the shop</a></p><p><a href="https://example.com/story">Again</a></p>`
+		);
+		await m.Message.updateMany({ accountId: user.accountId, campaignId: id }, { $set: { sentAt: new Date(Date.now() - 3_600_000) } });
+		const [first, second] = emails.map(trackedLinks);
+		const page = [...first.keys()].find((url) => !url.startsWith("https://example.com/"));
+		assert.match(page, /\/p\//, "its emails link its page");
+		await click(first.get("https://example.com/story"));
+		await click(first.get(page));
+		await click(second.get("https://example.com/story?utm_source=mailcheap"));
+
+		const campaign = await m.Campaign.findOne({ accountId: user.accountId, _id: id }).lean();
+		const newsletter = await m.Newsletter.findOne({ accountId: user.accountId, _id: campaign.newsletterId }).lean();
+		const links = await m.findCampaignLinks(campaign);
+		const preview = findElement(m.CampaignReport({ campaign, newsletter, providers: [], links, timeZone: "UTC" }), m.ButtonClickMap);
+		const [story, shop, readOnline] = ["https://example.com/story", "https://example.com/shop", page].map((url) => getLinkKey(normalizeLink(url)));
+		assert.deepEqual(preview.props.clicks, {
+			clickers: 2,
+			links: [
+				{ key: story, clickers: 2 },
+				{ key: readOnline, clickers: 1 },
+			],
+		});
+		const marked = [...preview.props.html.matchAll(/<a data-link-key="([^"]+)"/g)].map(([, key]) => key);
+		assert.deepEqual(marked, [readOnline, story, shop, story], "Read online first, as the email has it, and the story twice");
+
+		const quiet = await sendIssue(user, `<p><a href="https://example.com/nobody">Nobody</a></p>`);
+		const unclicked = await m.Campaign.findOne({ accountId: user.accountId, _id: quiet.id }).lean();
+		const none = findElement(
+			m.CampaignReport({ campaign: unclicked, newsletter, providers: [], links: await m.findCampaignLinks(unclicked), timeZone: "UTC" }),
+			m.ButtonClickMap
+		);
+		assert.equal(none.props.clicks, null, "nothing to show before a link gets a click");
+		assert.doesNotMatch(none.props.html, /data-link-key/);
 	});
 
 	test("an issue sent before clicks were counted per link has them since its first one; other emails count for nothing", async () => {

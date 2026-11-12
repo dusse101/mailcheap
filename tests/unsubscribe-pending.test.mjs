@@ -68,7 +68,7 @@ before(async () => {
 		apiKeys: await import("../app/(app)/api-keys/actions.js"),
 		unsubscribeRoute: await import("../app/api/unsubscribe/route.js"),
 		unsubscribePage: await import("../app/unsubscribe/page.js"),
-		confirmRoute: await import("../app/api/confirm/route.js"),
+		confirm: await import("../app/confirm/actions.js"),
 		events: await import("../lib/email-events.js"),
 		Contact: (await import("../models/Contact.js")).default,
 		Message: (await import("../models/Message.js")).default,
@@ -134,15 +134,7 @@ describe("unsubscribing while pending", () => {
 		const contact = await pending("changed-mind@example.org");
 		await m.unsubscribeRoute.POST(unsubscribeRequest(contact).request);
 		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
-		await anonymous(() =>
-			m.confirmRoute.POST(
-				new Request("http://localhost:3000/api/confirm", {
-					method: "POST",
-					headers: { origin: "http://localhost:3000" },
-					body: new URLSearchParams({ token }),
-				})
-			)
-		);
+		assert.deepEqual(await anonymous(() => m.confirm.confirmSubscription(token)), { error: "invalid" });
 		assert.equal((await find("changed-mind@example.org")).status, "unsubscribed");
 
 		const before = sesEmails.length;

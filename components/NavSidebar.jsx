@@ -12,13 +12,14 @@ import { readCookie } from "@/lib/storage";
 import { isSidebarCollapsed, readSidebarVisit, subscribeToSidebarVisits } from "@/lib/use-collapsed-sidebar";
 import { cn } from "@/lib/utils";
 
-// The sidebar from md up: the logo, the newsletter menu (switcher), the navigation and the account menu (footer). The
+// The sidebar from md up: the logo, the newsletter menu (switcher), the navigation with the notifications' bell in a
+// section of its own after the account's pages (notifications) and the account menu (footer). The
 // button next to the logo collapses it, and the page takes the room (app/globals.css). Collapsed, it's folded down to
 // its icons, and unfolds over the page while a mouse is on it, where the same button keeps it open; folded, the logo
 // opens it too, for touch screens and the keyboard. The campaign editor collapses it too while it's open, unless it's
 // opened there (lib/use-collapsed-sidebar.js); the next page shows it as it was left. isCollapsed: the cookie the
 // layout was rendered from.
-export default function NavSidebar({ isCollapsed: isSavedCollapsed, isAdmin, switcher, footer }) {
+export default function NavSidebar({ isCollapsed: isSavedCollapsed, isAdmin, role, switcher, notifications, footer }) {
 	const isLeftCollapsed = useSyncExternalStore(subscribe, readIsCollapsed, () => isSavedCollapsed);
 	const visit = useSyncExternalStore(subscribeToSidebarVisits, readSidebarVisit, () => 0);
 	const [expandedVisit, setExpandedVisit] = useState(0);
@@ -133,7 +134,7 @@ export default function NavSidebar({ isCollapsed: isSavedCollapsed, isAdmin, swi
 						</button>
 					</div>
 					<div className="mb-5">{switcher}</div>
-					<NavLinks isAdmin={isAdmin} />
+					<NavLinks isAdmin={isAdmin} role={role} notifications={notifications} />
 				</div>
 				<div className="shrink-0 px-3 pt-4">{footer}</div>
 			</div>

@@ -1,37 +1,71 @@
 "use client";
 
-import { useImperativeHandle, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import FileHandler from "@tiptap/extension-file-handler";
 import { Placeholder } from "@tiptap/extensions";
 import StarterKit from "@tiptap/starter-kit";
-import { HtmlBlock } from "@/components/BlockHtml";
+import { HtmlBlock, editHtmlBlock } from "@/components/BlockHtml";
+import { Section, SectionsContext } from "@/components/BlockSection";
+import DialogContactFields from "@/components/DialogContactFields";
 import DialogImagePicker from "@/components/DialogImagePicker";
+import GutterProblems from "@/components/GutterProblems";
 import MenuButton from "@/components/MenuButton";
 import MenuFormat from "@/components/MenuFormat";
 import MenuImage from "@/components/MenuImage";
-import { SlashCommand } from "@/components/MenuSlash";
+import { MergeTagSuggestion, SlashCommand } from "@/components/MenuSlash";
+import ProviderContactOptions from "@/components/ProviderContactOptions";
 import TooltipMergeTag from "@/components/TooltipMergeTag";
+import { isButtonLink } from "@/lib/buttons";
 import { BlockHandle } from "@/lib/editor-block-handle";
 import { ButtonBlock, findButton } from "@/lib/editor-button";
 import { Callout } from "@/lib/editor-callout";
 import { findWords } from "@/lib/editor-find";
 import { ImageAligned } from "@/lib/editor-image";
-import { MergeTags } from "@/lib/editor-merge-tags";
+import { MergeTags, setEditorFields } from "@/lib/editor-merge-tags";
+import { Problems, findDocProblems, findProblem, revealProblem, setProblemSegments } from "@/lib/editor-problems";
 import { UndoDelete } from "@/lib/editor-undo-delete";
+import { fieldTag } from "@/lib/merge-tags";
 import { toast } from "@/lib/toast";
 import { IMAGE_TYPES, IMAGE_TYPE_ERROR, getDisplaySize, prepareImage, uploadImage } from "@/lib/upload-image";
 import { useFileDropGuard } from "@/lib/use-file-drop";
 
 const MIN_HEIGHT = "min-h-[560px]";
+const NO_FIELDS = [];
+const NO_TAGS = [];
 
-// contactFields: the account's fields, whose tags the editor draws as placeholders and its slash menu inserts.
+// contactFields: the account's fields, whose tags the editor draws as placeholders and its slash menu inserts. Add a
+// field, in the slash menu, opens them to add one, which goes where the slash was: onContactFieldsChange(fields) gives
+// them back as they are after one is added or deleted there.
 // newsletter: whose email design HTML blocks preview in, and whose button colors and corners buttons show.
-// ref: select(words), which selects the first place the issue has them and says whether it found one.
-export default function EditorRich({ ref, content, onChange, contactFields = [], newsletter = null }) {
+// ref: reveal({ id, message, words }), which goes to a review step's warning or check (lib/campaign-steps.js), else to
+// the first place the issue has the words, and says whether it found it; append(block), which adds a block at the end;
+// getEditor(), for a team's draft to show others' changes and where they are (lib/editor-sync.js).
+// gutterRef: the positioned element around the editor's card, whose problems' dots sit beside it in the page's margin
+// (components/GutterProblems.jsx). sections: what the issue's sections pick from (components/BlockSection.jsx), its
+// segments a section without one is marked by; without them, as in the newsletter's own emails, the slash menu offers
+// no section. actionLink: the link the email's button keeps (components/MenuButton.jsx). minHeight: a min-h- class.
+export default function EditorRich({
+	ref,
+	gutterRef,
+	content,
+	onChange,
+	contactFields = NO_FIELDS,
+	onContactFieldsChange = () => {},
+	newsletter = null,
+	sections = null,
+	actionLink = null,
+	minHeight = MIN_HEIGHT,
+}) {
 	const [isEditingLink, setIsEditingLink] = useState(false);
 	const [isEditingButtonLink, setIsEditingButtonLink] = useState(false);
 	const [isPickingImage, setIsPickingImage] = useState(false);
+	const [isAddingField, setIsAddingField] = useState(false);
+	// The block whose dot says what it's about, once brought into view.
+	const [pinned, setPinned] = useState(null);
+	const unpin = useCallback(() => setPinned(null), []);
+	const segments = sections?.segments;
+	const segmentIds = useMemo(() => (segments ?? []).map(({ id }) => id), [segments]);
 	const editor = useEditor({
 		immediatelyRender: false,
 		content,
@@ -54,9 +88,11 @@ export default function EditorRich({ ref, content, onChange, contactFields = [],
 			Callout,
 			ButtonBlock.configure({ newsletter, onEditLink: () => setIsEditingButtonLink(true) }),
 			HtmlBlock.configure({ newsletter }),
+			Section,
 			BlockHandle,
 			UndoDelete,
 			MergeTags.configure({ contactFields }),
+			Problems.configure({ contactFields }),
 			Placeholder.configure({
 				placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or press / for commands"),
 			}),
@@ -66,11 +102,17 @@ export default function EditorRich({ ref, content, onChange, contactFields = [],
 				onDrop: (current, files, position) => insertImages(current, files, position),
 				onPaste: (current, files) => insertImages(current, files),
 			}),
-			SlashCommand.configure({ onPickImage: () => setIsPickingImage(true), contactFields }),
+			SlashCommand.configure({
+				onPickImage: () => setIsPickingImage(true),
+				onAddField: () => setIsAddingField(true),
+				contactFields,
+				withSections: Boolean(sections),
+			}),
+			MergeTagSuggestion.configure({ contactFields }),
 		],
 		editorProps: {
 			// With a mouse, the left padding holds the blocks' drag handle (lib/editor-block-handle.js).
-			attributes: { class: `prose-issue ${MIN_HEIGHT} px-5 py-5 outline-none [@media(pointer:fine)]:pl-12`, "aria-label": "Content" },
+			attributes: { class: `prose-issue ${minHeight} px-5 py-5 outline-none [@media(pointer:fine)]:pl-12`, "aria-label": "Content" },
 			// In a button, ⌘K opens the button's own link (lib/editor-button.js).
 			handleKeyDown: (view, event) => {
 				const isLinkShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
@@ -90,15 +132,53 @@ export default function EditorRich({ ref, content, onChange, contactFields = [],
 		onUpdate: ({ editor: current }) => onChange(current.getHTML()),
 	});
 	useFileDropGuard();
-	useImperativeHandle(ref, () => ({ select: (words) => Boolean(editor && selectWords(editor, words)) }), [editor]);
 
-	if (!editor) return <div className={MIN_HEIGHT} />;
+	// A button whose link is missing or looks broken opens its link field, an HTML block its HTML, which says what's wrong
+	// under it, and words get their dot's message beside them.
+	function reveal(found) {
+		if (!revealProblem(editor, found)) return false;
+		const node = editor.state.doc.nodeAt(found.pos);
+		if (node.type.name === "htmlBlock") editHtmlBlock(editor.view, found.pos);
+		else if (node.type.name === "button") setIsEditingButtonLink(found.problem.id === "links" || !isButtonLink(node.attrs.href));
+		else setPinned(found.pos);
+		return true;
+	}
+
+	useImperativeHandle(ref, () => ({
+		reveal: ({ id, message, words }) => {
+			if (!editor || editor.isDestroyed) return false;
+			const found = findProblem(findDocProblems(editor.state.doc, contactFields, segmentIds), { id, message });
+			return found ? reveal(found) : Boolean(words && selectWords(editor, words));
+		},
+		append: (block) => {
+			if (!editor || editor.isDestroyed) return;
+			editor.chain().insertContentAt(editor.state.doc.content.size, block).focus("end").scrollIntoView().run();
+		},
+		getEditor: () => (editor && !editor.isDestroyed ? editor : null),
+	}));
+
+	useEffect(() => {
+		if (editor && !editor.isDestroyed) setProblemSegments(editor, segmentIds);
+	}, [editor, segmentIds]);
+
+	useEffect(() => {
+		if (editor && !editor.isDestroyed) setEditorFields(editor, contactFields);
+	}, [editor, contactFields]);
+
+	if (!editor) return <div className={minHeight} />;
 
 	return (
-		<>
+		<SectionsContext value={sections}>
 			<EditorContent editor={editor} className="relative" />
+			<GutterProblems
+				editor={editor}
+				gutterRef={gutterRef}
+				pinned={pinned}
+				onUnpin={unpin}
+				onReveal={({ pos, problems }) => reveal({ pos, problem: problems[0] })}
+			/>
 			<MenuFormat editor={editor} isEditingLink={isEditingLink} onEditLink={setIsEditingLink} />
-			<MenuButton editor={editor} isEditingLink={isEditingButtonLink} onEditLink={setIsEditingButtonLink} />
+			<MenuButton editor={editor} isEditingLink={isEditingButtonLink} onEditLink={setIsEditingButtonLink} actionLink={actionLink} />
 			<MenuImage editor={editor} />
 			<TooltipMergeTag editor={editor} contactFields={contactFields} />
 			<DialogImagePicker
@@ -106,7 +186,23 @@ export default function EditorRich({ ref, content, onChange, contactFields = [],
 				onOpenChange={setIsPickingImage}
 				onSelect={(image) => insertImage(editor, image)}
 			/>
-		</>
+			<ProviderContactOptions fields={contactFields} tags={NO_TAGS}>
+				<DialogContactFields
+					isOpen={isAddingField}
+					onOpenChange={setIsAddingField}
+					onAdded={(field) => {
+						setIsAddingField(false);
+						onContactFieldsChange([...contactFields, field]);
+						editor.chain().focus().insertContent(fieldTag(field.key)).run();
+					}}
+					onDeleted={(key) => onContactFieldsChange(contactFields.filter((field) => field.key !== key))}
+					onCloseAutoFocus={(event) => {
+						event.preventDefault();
+						editor.commands.focus();
+					}}
+				/>
+			</ProviderContactOptions>
+		</SectionsContext>
 	);
 }
 

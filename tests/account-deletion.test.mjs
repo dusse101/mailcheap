@@ -109,8 +109,8 @@ function connectApp(user, clientId = "app-client") {
 }
 
 // A paying customer with one of everything: Google as a sign-in method, a newsletter on the shared address, contacts
-// from an import and one deleted after it unsubscribed, a campaign with a test sent, a verified domain, an image on S3,
-// an API key, a connected app, problem events, suppressions and an alert.
+// from an import, one deleted after it unsubscribed and an address the import left out, a campaign with a test sent, a
+// verified domain, an image on S3, an API key, a connected app, problem events, suppressions and an alert.
 async function customer(email, slug) {
 	const user = await signIn(email);
 	await collection("auth_accounts").insertOne({ userId: user.userId, providerId: "google", accountId: `google-${slug}`, createdAt: new Date(), updatedAt: new Date() });
@@ -124,6 +124,7 @@ async function customer(email, slug) {
 				{ email: `reader@${slug}.org`, status: "active" },
 				{ email: `other@${slug}.org`, status: "active" },
 				{ email: `left@${slug}.org`, status: "unsubscribed" },
+				{ email: `info@${slug}.org`, status: "active" },
 			],
 		})
 	);
@@ -139,11 +140,13 @@ async function customer(email, slug) {
 	await m.Event.create({ accountId: user.accountId, type: "bounce", email: `reader@${slug}.org` });
 	await m.Suppression.create({ accountId: user.accountId, email: `gone@${slug}.org`, reason: "bounce" });
 	await m.Alert.create({ accountId: user.accountId, key: `test-${slug}`, title: "Test", lastSentAt: new Date() });
+	await m.Notification.create({ accountId: user.accountId, key: `test-${slug}`, kind: "import-done", title: "Imported 2 new contacts", at: new Date() });
+	await m.PageView.create({ accountId: user.accountId, campaignId: user.campaignId, hour: new Date("2026-11-02T10:00:00Z"), views: 3 });
 	user.account = await m.Account.findById(user.accountId).lean();
 	return user;
 }
 
-const ACCOUNT_MODELS = ["Newsletter", "Contact", "ContactImport", "DeletedContact", "Campaign", "Message", "Event", "Suppression", "Upload", "Domain", "ApiKey", "Alert"];
+const ACCOUNT_MODELS = ["Newsletter", "Contact", "ContactImport", "LeftOutContact", "DeletedContact", "Campaign", "Message", "Event", "Suppression", "Upload", "Domain", "ApiKey", "Alert", "Notification", "PageView"];
 
 async function countData(user) {
 	const counts = {};
@@ -188,8 +191,11 @@ before(async () => {
 		DeletionRecord: (await import("../models/DeletionRecord.js")).default,
 		Domain: (await import("../models/Domain.js")).default,
 		Event: (await import("../models/Event.js")).default,
+		LeftOutContact: (await import("../models/LeftOutContact.js")).default,
 		Message: (await import("../models/Message.js")).default,
 		Newsletter: (await import("../models/Newsletter.js")).default,
+		Notification: (await import("../models/Notification.js")).default,
+		PageView: (await import("../models/PageView.js")).default,
 		Suppression: (await import("../models/Suppression.js")).default,
 		Upload: (await import("../models/Upload.js")).default,
 	};

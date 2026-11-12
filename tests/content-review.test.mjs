@@ -13,7 +13,7 @@ import {
 	parseVerdict,
 	reviewContent,
 } from "../lib/content-review.js";
-import { activate, as, callApi, catchNotFound, catchRedirect, form, mockOpenAI, openaiRequests, platformEmails, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
+import { activate, addAuthor, as, callApi, catchNotFound, catchRedirect, form, mockOpenAI, openaiRequests, platformEmails, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 import { sent as sesEmails } from "./stubs/ses.mjs";
 
@@ -252,6 +252,7 @@ async function customer(email) {
 		)
 	);
 	user.newsletterId = url.split("/").at(-1);
+	await addAuthor(user);
 	const rows = [0, 1].map((index) => ({ email: `reader${index}@${slug}.example.org`, status: "active" }));
 	await as(user, () => m.contacts.importContacts({ newsletterId: user.newsletterId, consent: true, rows }));
 	user.key = (await as(user, () => m.apiKeys.createApiKey(null, form({ name: "Agent" })))).key;
@@ -283,12 +284,15 @@ before(async () => {
 		contacts: await import("../app/(app)/contacts/actions.js"),
 		apiKeys: await import("../app/(app)/api-keys/actions.js"),
 		admin: await import("../app/admin/actions.js"),
+		notifications: await import("../app/(app)/(notifications)/actions.js"),
 		archive: await import("../lib/archive-data.js"),
 		scheduling: await import("../lib/scheduling.js"),
 		review: await import("../lib/content-review.js"),
 		rateLimit: await import("../lib/rate-limit.js"),
+		sending: await import("../lib/sending.js"),
 		Account: (await import("../models/Account.js")).default,
 		Campaign: (await import("../models/Campaign.js")).default,
+		Contact: (await import("../models/Contact.js")).default,
 		Message: (await import("../models/Message.js")).default,
 		Newsletter: (await import("../models/Newsletter.js")).default,
 	};
@@ -347,6 +351,16 @@ describe("the content check before a send", () => {
 		assert.equal((viaApi.body.data ?? viaApi.body).pauseCode, "content_review");
 		assert.ok(!JSON.stringify(viaApi.body).includes("fake bank"), "the API never shows the check's reasons");
 		await catchNotFound(as(user, () => m.admin.approveContentReview(id)));
+		const listed = (await as(user, () => m.notifications.getNotifications())).notifications;
+		const held = listed.filter(({ path }) => path === `/campaigns/${id}`);
+		assert.deepEqual(
+			held.map(({ kind, title, path, read }) => ({ kind, title, path, read })),
+			[{ kind: "issue-review", title: "Issue under review", path: `/campaigns/${id}`, read: false }],
+			"its owner hears it waits, from the dashboard only"
+		);
+		assert.equal(held[0].body, "A person checks “Issue” before it goes out, usually within a few hours.");
+		assert.ok(!JSON.stringify(held).includes("fake bank"), "the notification never says why");
+		await as(user, () => m.notifications.markNotificationsRead(listed.map(({ id: shown }) => shown)));
 
 		assert.deepEqual(await as(admin, () => m.admin.approveContentReview(id)), { ok: true });
 		campaign = await load(user, id);
@@ -354,6 +368,12 @@ describe("the content check before a send", () => {
 		assert.equal(campaign.review.decision, "approved");
 		assert.equal(campaign.review.decidedBy, "admin@example.com");
 		assert.equal(await countMessages(user, id), 2);
+		const approved = await as(user, () => m.notifications.getNotifications());
+		assert.equal(approved.unread, 1, "the decision brings it back as new");
+		assert.deepEqual(
+			approved.notifications.filter(({ read }) => !read).map(({ id: notificationId, kind, title, body }) => ({ notificationId, kind, title, body })),
+			[{ notificationId: held[0].id, kind: "issue-approved", title: "Issue approved", body: "“Issue” passed its review and is on its way." }]
+		);
 	});
 
 	test("a web-only issue goes through the same check: held, it stays off the website until an admin approves it", async () => {
@@ -695,7 +715,7 @@ describe("tips before a send or a schedule", () => {
 	});
 });
 
-describe("the content check of a newsletter's own welcome and confirmation emails", () => {
+describe("the content check of a newsletter's own welcome, confirmation and last-chance emails", () => {
 	const WELCOME = { requireConfirmation: false, welcome: { enabled: true, subject: "Welcome aboard", markdown: "Thanks for joining." } };
 	const CONFIRMATION = {
 		requireConfirmation: true,
@@ -795,6 +815,65 @@ describe("the content check of a newsletter's own welcome and confirmation email
 		const changed = await api(user, "PATCH", `/newsletters/${user.newsletterId}`, { welcome: { markdown: "Thanks for joining. Reply to say hi." } });
 		assert.equal(changed.welcome.review, null);
 		assert.equal(await signUp(user, "pal@signup-rejected.example.org"), "Welcome aboard");
+	});
+
+	const LAST_CHANCE = {
+		cleanup: { enabled: true },
+		lastChance: { subject: "Still there?", format: "rich", content: '<p>Log in to your bank to stay.</p><div data-button=""><a href="{{keep_url}}">Stay</a></div>' },
+	};
+
+	// A last-chance email to one of the newsletter's contacts, as a send's batch sends it: the subject that went out.
+	async function sendLastChance(user) {
+		const id = await draft(user);
+		await m.Campaign.updateOne({ accountId: user.accountId, _id: id }, { $set: { status: "sending" } });
+		const contact = await m.Contact.findOne({ accountId: user.accountId, newsletterId: user.newsletterId }).lean();
+		const message = await m.Message.create({
+			accountId: user.accountId,
+			campaignId: id,
+			newsletterId: user.newsletterId,
+			contactId: contact._id,
+			email: contact.email,
+			kind: "last-chance",
+		});
+		const before = sesEmails.length;
+		await m.sending.sendMessageBatch({ accountId: String(user.accountId), messageIds: [String(message._id)] });
+		return sesEmails.slice(before).find(({ to }) => [to].flat().includes(contact.email))?.subject ?? null;
+	}
+
+	test("a last-chance email it holds: cold contacts get the built-in one, its page says In review, and an approval lets it go", async () => {
+		answer = "phishing";
+		const user = await customer("cleanup-held@example.com");
+		const emailsBefore = platformEmails.length;
+		const saved = await api(user, "PATCH", `/newsletters/${user.newsletterId}`, LAST_CHANCE);
+		assert.deepEqual(saved.lastChance.review, { status: "in_review", note: null });
+		assert.equal(saved.lastChance.isCustom, true);
+		assert.ok(!JSON.stringify(saved).includes(REASON), "the API never shows the check's reasons");
+		const toAdmins = emailsTo("admin@example.com", emailsBefore);
+		assert.ok(toAdmins.some(({ subject, text }) => subject === "[MailCheap] Last-chance email held for review" && text.includes(`/admin/newsletters/${user.newsletterId}`)));
+		assert.equal(await sendLastChance(user), "Do you still want cleanup-held news?", "the built-in one goes out");
+
+		const CleanupPage = (await import("../app/(app)/newsletters/cleanup/page.js")).default;
+		const page = renderToStaticMarkup(await as(user, () => CleanupPage()));
+		assert.ok(page.includes("In review: a person at MailCheap checks this email before it goes out"), "its page says so");
+		assert.ok(page.includes('name="lastChanceSubject"') && page.includes("Still there?"), "with the email to change it");
+		assert.ok(!page.includes(REASON), "never why");
+
+		assert.deepEqual(await as(admin, () => m.admin.approveSignupEmail(user.newsletterId, "lastChance")), { ok: true });
+		assert.equal((await loadReviews(user)).lastChance.decision, "approved");
+		assert.equal(await sendLastChance(user), "Still there?", "its own goes out once approved");
+	});
+
+	test("a last-chance email saved while the cleanup is off is checked once it's on, before it goes out", async () => {
+		answer = "clean";
+		const user = await customer("cleanup-later@example.com");
+		await m.Newsletter.updateOne({ accountId: user.accountId, _id: user.newsletterId }, { $set: { lastChance: { subject: "Still there?", format: "rich", html: LAST_CHANCE.lastChance.content } } });
+		const requestsBefore = openaiRequests.length;
+		assert.equal((await api(user, "GET", `/newsletters/${user.newsletterId}`)).lastChance.review, null);
+		assert.equal(openaiRequests.length, requestsBefore, "reading checks nothing, and the cleanup is off");
+		await m.Newsletter.updateOne({ accountId: user.accountId, _id: user.newsletterId }, { $set: { "cleanup.enabled": true } });
+		assert.equal(await sendLastChance(user), "Still there?");
+		assert.equal(openaiRequests.length - requestsBefore, 2, "checked once, before it went out");
+		assert.equal((await loadReviews(user)).lastChance.outcome, "allow");
 	});
 
 	test("one saved before the check is checked before it first goes out", async () => {

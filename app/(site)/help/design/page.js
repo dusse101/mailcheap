@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ArticleHelp from "@/components/ArticleHelp";
+import FigureHelp from "@/components/FigureHelp";
 import LinkApp from "@/components/LinkApp";
 import { getHelpHref, getHelpPageMetadata } from "@/lib/help";
 import { getEmailBrand } from "@/lib/public-brand";
@@ -21,16 +22,30 @@ export default function DesignPage() {
 				your emails in it, and a click applies it. A message lets you undo it.
 			</p>
 			<p>
+				A new newsletter&apos;s get-started list, at the bottom right of the <LinkApp href="/">dashboard</LinkApp>, starts with
+				the same choice: each theme is a tile in its colors and heading font, in a row that scrolls sideways, and a click on one
+				applies it. Customize, in the message that follows, opens its customizer here, and the list moves on to its next step.{" "}
+				<Link href={getHelpHref("getting-started", "first-issue")}>Getting started</Link>
+			</p>
+			<p>
 				There are {THEME_PRESETS.length}: {mailcheap.name}, the black and white look newsletters start with, then{" "}
 				{presets.map(({ name }) => name).join(", ")}.
 			</p>
+			<FigureHelp
+				src="/help/design/themes.webp"
+				alt="The Design page's themes, each showing the newsletter's website and an email in it, with MailCheap in use."
+				caption="Themes on the Design page"
+			/>
 
 			<h2 id="customize">Changing a theme</h2>
 			<p>Customize, on the theme you use, changes it with your website and an email shown as you go:</p>
 			<ul>
 				<li>
-					<strong>Colors</strong>: the page, the text and the accent, for buttons and links. Every other shade comes from these three.
-					When the accent is too light to read as text, links keep the text color and the accent underlines them.
+					<strong>Colors</strong>: the page, the text and the accent, for buttons and links, in light and in dark. Light and Dark,
+					above them, pick which ones you change, and the website and the email show those. Every other shade comes from these
+					three. An accent changed in one mode only, like your brand&apos;s color, follows into the other, a little lighter or
+					darker where its page needs it. When the accent is too light to read as text, links keep the text color and the accent
+					underlines them.
 				</li>
 				<li>
 					<strong>Fonts</strong>: one for headings and one for text, out of {THEME_FONTS.length}:{" "}
@@ -47,6 +62,11 @@ export default function DesignPage() {
 				</li>
 				<li>
 					<strong>Spacing</strong>: the line height and the space between paragraphs.
+				</li>
+				<li>
+					<strong>Alignment</strong>, for emails only: where they sit on a screen wider than them, like a computer&apos;s. In the
+					middle, or on the left like a personal email. Picking one shows the email as a computer does. Phones show emails full
+					width either way, and your website stays as it is.
 				</li>
 			</ul>
 			<p>
@@ -85,8 +105,19 @@ export default function DesignPage() {
 
 			<h2 id="dark-mode">Dark mode</h2>
 			<p>
-				With {mailcheap.name}&apos;s own colors, your website follows each reader&apos;s light or dark mode. Every other palette,
-				changed colors included, looks the same for everyone, so a dark theme like Midnight stays dark.
+				Every theme comes in light and dark. Your website shows each reader the one their device uses, and the buttons at the
+				bottom of every page switch it between System, Light and Dark: their browser remembers the choice. The Design page shows
+				the themes in the dashboard&apos;s own mode.
+			</p>
+			<p>
+				Your emails follow your readers&apos; devices too. Apple Mail and Outlook show your theme&apos;s light colors in light mode and
+				its dark colors in dark mode. Gmail&apos;s apps show the light colors and darken them on their own when the phone is in dark
+				mode, and Gmail on a computer shows the light colors. An HTML block keeps the colors written in it. The previews show your
+				emails in light, and the customizer in the mode you pick.
+			</p>
+			<p>
+				The form for your site and the pictures link previews show keep the colors of the mode a theme is made for: light, and
+				dark for {presets.find(({ mode }) => mode === "dark")?.name}.
 			</p>
 
 			<h2 id="api">From the API and AI assistants</h2>

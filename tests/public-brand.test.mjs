@@ -9,8 +9,7 @@ import { createUnsubscribeToken } from "../lib/unsubscribe.js";
 import { activate, anonymous, as, catchRedirect, form, signIn, startTestApp, withEnv } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 
-// The confirm link only shows a button: opening it never confirms, so link scanners can't subscribe anyone. With
-// PUBLIC_PAGES_BRAND set, the confirm, keep and unsubscribe pages wear the brand; without it they're the stock pages.
+// The confirm page confirms from its script, as upstream's does. With PUBLIC_PAGES_BRAND set, the confirm, keep and unsubscribe pages wear the brand; without it they're the stock pages.
 // The keep page's own behavior is tests/keep.test.mjs.
 let app;
 let m;
@@ -21,7 +20,6 @@ before(async () => {
 	m = {
 		newsletters: await import("../app/(app)/newsletters/actions.js"),
 		confirm: await import("../app/confirm/actions.js"),
-		confirmRoute: await import("../app/api/confirm/route.js"),
 		confirmPage: await import("../app/confirm/page.js"),
 		keepPage: await import("../app/keep/page.js"),
 		unsubscribePage: await import("../app/unsubscribe/page.js"),
@@ -65,28 +63,29 @@ const BRAND = { PUBLIC_PAGES_BRAND: "tacoandtell" };
 
 describe("confirming a subscription", () => {
 	for (const [label, env] of [["stock", { PUBLIC_PAGES_BRAND: "" }], ["branded", BRAND]]) {
-		test(`opening the link shows a button and changes nothing (${label})`, async () => {
+		test(`the page confirms from its script, so rendering it changes nothing (${label})`, async () => {
 			const contact = await pendingContact(`open-${label}@example.org`);
 			const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
 			const html = await withEnv(env, () => renderPage(m.confirmPage, { token }));
-			assert.ok(html.includes('action="/api/confirm"'), label);
-			assert.ok(html.includes(`name="token" value="${token}"`), label);
-			assert.match(html, /method="post"/);
-			assert.match(html, label === "branded" ? /Yes, subscribe me/ : /Confirm my subscription/);
-			assert.doesNotMatch(html, /\$ACTION_/);
+			assert.match(html, /<button[^>]*>Confirm my subscription<\/button>/, label);
+			assert.doesNotMatch(html, /<form/, label);
+			assert.doesNotMatch(html, /Yes, subscribe me/, label);
+			if (label === "branded") assert.match(html, /Confirming your subscription/);
 			await flushAfter();
 			assert.equal(await statusOf(contact), "pending");
 		});
 	}
 
-	test("the confirm forms never submit themselves", async () => {
+	test("both confirm pages confirm as soon as their script runs", async () => {
 		for (const file of ["components/FormConfirm.jsx", "components/FormConfirmBrand.jsx"]) {
 			const source = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
-			assert.doesNotMatch(source, /requestSubmit|\.submit\(\)|useEffect/, file);
+			assert.match(source, /useEffect\(/, file);
+			assert.match(source, /confirmSubscription/, file);
+			assert.doesNotMatch(source, /\/api\/confirm/, file);
 		}
 	});
 
-	test("the button's POST confirms, and pressing it again still says you're in", async () => {
+	test("confirming works, and confirming again still says you're in", async () => {
 		const contact = await pendingContact("press@example.org");
 		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
 		assert.deepEqual(await anonymous(() => m.confirm.confirmSubscription(token)), { ok: true });
@@ -95,69 +94,11 @@ describe("confirming a subscription", () => {
 		assert.deepEqual(await anonymous(() => m.confirm.confirmSubscription(token)), { ok: true });
 	});
 
-	test("the confirm page asks browsers for the origin only, so the POST still carries Origin", async () => {
-		assert.equal(m.confirmPage.generateMetadata().referrer, "strict-origin");
+	test("the confirm page sends no referrer", async () => {
+		assert.equal(m.confirmPage.generateMetadata().referrer, "no-referrer");
 	});
 
-	test("the button's POST confirms and comes back, and another site's POST does not", async () => {
-		const contact = await pendingContact("route@example.org");
-		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
-		const url = `http://localhost:3000/api/confirm?token=${encodeURIComponent(token)}`;
-
-		const opened = await m.confirmRoute.GET(new Request(url));
-		assert.equal(opened.status, 303);
-		assert.equal(await statusOf(contact), "pending", "GET confirms nobody");
-
-		const posted = await anonymous(() => m.confirmRoute.POST(new Request(url, { method: "POST" })));
-		assert.equal(posted.status, 303);
-		const location = new URL(posted.headers.get("location"));
-		assert.equal(location.pathname, "/confirm");
-		assert.equal(location.searchParams.get("token"), token);
-		await flushAfter();
-		assert.equal(await statusOf(contact), "active");
-
-		const fromForm = await pendingContact("route-form@example.org");
-		const formToken = createConfirmToken({ contactId: fromForm._id, newsletterId: user.newsletterId });
-		const formPost = await anonymous(() =>
-			m.confirmRoute.POST(
-				new Request("http://localhost:3000/api/confirm", { method: "POST", body: new URLSearchParams({ token: formToken }) })
-			)
-		);
-		assert.equal(formPost.status, 303);
-		assert.equal(new URL(formPost.headers.get("location")).searchParams.get("token"), formToken);
-		await flushAfter();
-		assert.equal(await statusOf(fromForm), "active");
-
-		const again = await anonymous(() =>
-			m.confirmRoute.POST(new Request(url, { method: "POST", headers: { origin: "http://localhost:3000" } }))
-		);
-		assert.equal(again.status, 303);
-		assert.equal(await statusOf(contact), "active");
-
-		const forwarded = await anonymous(() =>
-			m.confirmRoute.POST(
-				new Request(url, { method: "POST", headers: { origin: "https://app.example", "x-forwarded-host": "app.example" } })
-			)
-		);
-		assert.equal(forwarded.status, 303);
-
-		for (const origin of ["null", "https://evil.example"]) {
-			const refused = await pendingContact(`refused-${origin.length}@example.org`);
-			const refusedToken = createConfirmToken({ contactId: refused._id, newsletterId: user.newsletterId });
-			const response = await anonymous(() =>
-				m.confirmRoute.POST(
-					new Request(`http://localhost:3000/api/confirm?token=${encodeURIComponent(refusedToken)}`, {
-						method: "POST",
-						headers: { origin, "x-forwarded-host": "localhost:3000" },
-					})
-				)
-			);
-			assert.equal(response.status, 403, origin);
-			assert.equal(await statusOf(refused), "pending", origin);
-		}
-	});
-
-	test("someone already confirmed sees that, and a refresh does not ask them again", async () => {
+	test("someone already confirmed sees that on the branded page, and nothing runs again", async () => {
 		const contact = await m.Contact.create({
 			accountId: user.accountId,
 			newsletterId: user.newsletterId,
@@ -165,14 +106,12 @@ describe("confirming a subscription", () => {
 			status: "active",
 		});
 		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
-		for (const [label, env, heading] of [
-			["stock", { PUBLIC_PAGES_BRAND: "" }, /You(?:'|&#x27;)re in/],
-			["branded", BRAND, /You(?:'|&#x27;)re in/],
-		]) {
-			const html = await withEnv(env, () => renderPage(m.confirmPage, { token }));
-			assert.match(html, heading, label);
-			assert.doesNotMatch(html, /<form/, label);
-		}
+		const html = await withEnv(BRAND, () => renderPage(m.confirmPage, { token }));
+		assert.match(html, /You(?:'|&#x27;)re in! 🌮/);
+		assert.match(html, /drag it to Primary/);
+		assert.match(html, /Read past issues/);
+		assert.match(html, /Back to Taco &amp; Tell/);
+		assert.doesNotMatch(html, /<form|<button/);
 		assert.equal(await statusOf(contact), "active");
 		assert.equal(
 			(await m.Contact.findOne({ accountId: user.accountId, _id: contact._id }).select({ confirmedAt: 1 }).lean()).confirmedAt,
@@ -181,7 +120,7 @@ describe("confirming a subscription", () => {
 		);
 	});
 
-	test("someone who went dormant sees they're in, and pressing the button leaves them dormant", async () => {
+	test("someone who went dormant sees they're in, and confirming leaves them dormant", async () => {
 		const confirmedAt = new Date("2026-01-05T00:00:00Z");
 		const lastChanceAt = new Date("2026-08-01T00:00:00Z");
 		const contact = await m.Contact.create({
@@ -194,24 +133,12 @@ describe("confirming a subscription", () => {
 			ignoredIssues: 7,
 		});
 		const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
-		for (const [label, env] of [["stock", { PUBLIC_PAGES_BRAND: "" }], ["branded", BRAND]]) {
-			const html = await withEnv(env, () => renderPage(m.confirmPage, { token }));
-			assert.match(html, /You(?:'|&#x27;)re in/, label);
-			assert.doesNotMatch(html, /<form/, label);
-			assert.doesNotMatch(html, /isn&#x27;t waiting to confirm/, label);
-		}
+		const html = await withEnv(BRAND, () => renderPage(m.confirmPage, { token }));
+		assert.match(html, /You(?:'|&#x27;)re in/);
+		assert.doesNotMatch(html, /<form|<button/);
+		assert.doesNotMatch(html, /isn&#x27;t waiting to confirm/);
 
-		const posted = await anonymous(() =>
-			m.confirmRoute.POST(
-				new Request("http://localhost:3000/api/confirm", {
-					method: "POST",
-					headers: { origin: "http://localhost:3000" },
-					body: new URLSearchParams({ token }),
-				})
-			)
-		);
-		assert.equal(posted.status, 303);
-		assert.equal(new URL(posted.headers.get("location")).searchParams.get("token"), token);
+		await anonymous(() => m.confirm.confirmSubscription(token));
 		await flushAfter();
 		const after = await m.Contact.findOne({ accountId: user.accountId, _id: contact._id })
 			.select({ status: 1, confirmedAt: 1, lastChanceAt: 1, ignoredIssues: 1 })
@@ -233,15 +160,9 @@ describe("confirming a subscription", () => {
 			});
 			const token = createConfirmToken({ contactId: contact._id, newsletterId: user.newsletterId });
 			assert.deepEqual(await anonymous(() => m.confirm.confirmSubscription(token)), { error: "invalid" });
-			for (const [label, env, copy] of [
-				["stock", { PUBLIC_PAGES_BRAND: "" }, /isn&#x27;t waiting to confirm/],
-				["branded", BRAND, /isn&#x27;t waiting to confirm/],
-			]) {
-				const html = await withEnv(env, () => renderPage(m.confirmPage, { token }));
-				assert.match(html, copy, `${label} ${status}`);
-				assert.doesNotMatch(html, /<form/, `${label} ${status}`);
-				assert.doesNotMatch(html, /Yes, subscribe me|Confirm my subscription/, `${label} ${status}`);
-			}
+			const html = await withEnv(BRAND, () => renderPage(m.confirmPage, { token }));
+			assert.match(html, /isn&#x27;t waiting to confirm/, status);
+			assert.doesNotMatch(html, /<form|<button/, status);
 			await flushAfter();
 			assert.equal(await statusOf(contact), status);
 		}

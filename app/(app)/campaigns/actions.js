@@ -25,18 +25,31 @@ export async function createCampaign(newsletterId) {
 	redirect(`/campaigns/${output.id}`);
 }
 
-// The editor saves rich text, or the HTML of an imported issue; Markdown drafts open as rich text.
+// The editor saves rich text, or the HTML of an imported issue; Markdown drafts open as rich text. revision: on a team's
+// newsletter, the one the editor started from, which answers conflict once someone else saved since
+// (lib/use-draft-sync.js), and the new one once it's saved.
 export async function saveCampaign(id, values) {
-	const { failure } = await runDashboardAction("update_campaign", {
+	const revision = Number.isInteger(values?.revision) ? values.revision : undefined;
+	const { output, failure } = await runDashboardAction("update_campaign", {
 		id: String(id),
 		subject: String(values?.subject ?? "").slice(0, MAX_SUBJECT_LENGTH),
 		previewText: String(values?.previewText ?? "").slice(0, MAX_PREVIEW_TEXT_LENGTH),
 		content: String(values?.body ?? ""),
 		...(values?.format && { format: values.format }),
+		...(revision !== undefined && { revision }),
 	});
+	if (failure?.code === "revision_conflict") return { conflict: true };
 	if (failure) return toFormError(failure);
 	revalidatePath("/campaigns");
-	return { ok: true };
+	return revision === undefined ? { ok: true } : { ok: true, revision: output.revision };
+}
+
+// A draft as it's saved now, for an editor whose save someone else's beat to merge with.
+export async function loadDraft(id) {
+	const { output, failure } = await runDashboardAction("get_campaign", { id: String(id) });
+	if (failure) return toFormError(failure);
+	const { subject, previewText, content, format, revision } = output;
+	return { subject, previewText, content, format, revision };
 }
 
 // Who the draft goes to: a segment's ID, or null for every active contact. The page counts its audience again.
@@ -55,24 +68,124 @@ export async function setCampaignPublishTo(id, publishTo) {
 	return { ok: true };
 }
 
+// Who wrote the draft (components/PickerAuthor.jsx), saved right away like its segment.
+export async function setCampaignAuthor(id, authorId) {
+	const { failure } = await runDashboardAction("update_campaign", { id: String(id), author: String(authorId ?? "") });
+	if (failure) return toFormError(failure);
+	revalidatePath(`/campaigns/${id}`);
+	return { ok: true };
+}
+
+// A new author of the newsletter, who then writes the draft.
+export async function addCampaignAuthor(id, newsletterId, values) {
+	const { output, failure } = await runDashboardAction("create_author", {
+		newsletter: String(newsletterId ?? ""),
+		...readAuthorValues(values),
+	});
+	if (failure) return toFormError(failure);
+	const chosen = await setCampaignAuthor(id, output.id);
+	return chosen.error ? { ...chosen, author: toAuthorOption(output) } : { author: toAuthorOption(output) };
+}
+
+// Who the newsletter's new issues start with, picked on its Sender page and saved right away.
+export async function setDefaultAuthor(authorId) {
+	const { failure } = await runDashboardAction("update_author", { id: String(authorId ?? ""), isDefault: true });
+	if (failure) return toFormError(failure);
+	refreshAuthors();
+	return { ok: true };
+}
+
+// A new author of the newsletter, who then becomes its default one.
+export async function addDefaultAuthor(newsletterId, values) {
+	const { output, failure } = await runDashboardAction("create_author", {
+		newsletter: String(newsletterId ?? ""),
+		...readAuthorValues(values),
+	});
+	if (failure) return toFormError(failure);
+	const chosen = output.isDefault ? { ok: true } : await setDefaultAuthor(output.id);
+	return chosen.error ? { ...chosen, author: toAuthorOption(output) } : { author: toAuthorOption(output) };
+}
+
+export async function editAuthor(authorId, values) {
+	const { output, failure } = await runDashboardAction("update_author", { id: String(authorId ?? ""), ...readAuthorValues(values) });
+	if (failure) return toFormError(failure);
+	refreshAuthors();
+	return { author: toAuthorOption(output) };
+}
+
+export async function removeAuthor(authorId) {
+	const { failure } = await runDashboardAction("delete_author", { id: String(authorId ?? "") });
+	if (failure) return toFormError(failure);
+	refreshAuthors();
+	return { ok: true };
+}
+
+// The editor and the Sender page list the newsletter's authors.
+function refreshAuthors() {
+	revalidatePath("/campaigns", "layout");
+	revalidatePath("/newsletters", "layout");
+}
+
+function readAuthorValues(values) {
+	return {
+		name: String(values?.name ?? "").slice(0, 200),
+		email: String(values?.email ?? "").slice(0, 320),
+		imageUrl: String(values?.imageUrl ?? "").slice(0, 500),
+		showOnWeb: values?.showOnWeb !== false,
+		showInEmails: values?.showInEmails !== false,
+	};
+}
+
+// The menu shows an author by their picture, or the one their address has (AvatarUser).
+function toAuthorOption({ id, name, email, imageUrl, showOnWeb, showInEmails }) {
+	return { id, name, email, imageUrl, showOnWeb, showInEmails, gravatarHash: gravatarHash(email) };
+}
 // The preview's reader picker: the newsletter's active contacts with what's typed in their address or first name, the
 // newest before anything is, each with its field values, which the preview fills in, and the hash its picture comes
-// from (AvatarContact).
-export async function findPreviewContacts(newsletterId, query) {
+// from (AvatarContact). segmentIds: the segments the issue's sections name, of which each contact gets those it's in,
+// along with its tags (lib/sections.js).
+export async function findPreviewContacts(newsletterId, query, segmentIds = []) {
+	const inSegments = Array.isArray(segmentIds) ? segmentIds.map(String).slice(0, 10) : [];
 	const { output, failure } = await runDashboardAction("search_contacts", {
 		newsletter: String(newsletterId ?? ""),
 		query: String(query ?? "").slice(0, 100),
 		status: "active",
 		limit: 8,
+		...(inSegments.length > 0 && { inSegments }),
 	});
 	if (failure) return toFormError(failure);
 	return {
-		contacts: output.contacts.map(({ id, email, firstName, fields }) => ({ id, email, firstName, fields, gravatarHash: gravatarHash(email) })),
+		contacts: output.contacts.map(({ id, email, firstName, fields, tags, inSegments: member = [] }) => ({
+			id,
+			email,
+			firstName,
+			fields,
+			tags,
+			segments: Object.fromEntries(inSegments.map((segmentId) => [segmentId, member.includes(segmentId)])),
+			gravatarHash: gravatarHash(email),
+		})),
 	};
 }
 
-export async function sendTestCampaign(id) {
-	const { failure } = await runDashboardAction("send_test_email", { id: String(id) });
+// How many of the readers a draft goes to have a tag or are in a segment, for its sections: tag:<tag> or segment:<id>.
+export async function countSectionReaders(id, groups) {
+	const { output, failure } = await runDashboardAction("count_section_readers", {
+		id: String(id),
+		groups: Array.isArray(groups) ? groups.map(String).slice(0, 10) : [],
+	});
+	return failure ? toFormError(failure) : output;
+}
+
+// Every tag and segment with how many of the readers a draft goes to each picks, for the menu its sections pick from.
+export async function countAllSectionReaders(id) {
+	const { output, failure } = await runDashboardAction("count_section_readers", { id: String(id), all: true });
+	return failure ? toFormError(failure) : output;
+}
+
+// The test dialog (DialogSendTest): the addresses it goes to, the default ones without, the ID of the contact it reads
+// as, and whether the addresses become the default.
+export async function sendTestCampaign(id, { to, contact, saveAsDefault } = {}) {
+	const { failure } = await runDashboardAction("send_test_email", { id: String(id), to, contact: contact ?? undefined, saveAsDefault });
 	revalidatePath(`/campaigns/${id}`);
 	return failure ? toFormError(failure) : { ok: true };
 }
@@ -143,6 +256,7 @@ export async function toggleArchivePin(id) {
 	const { failure } = await runDashboardAction("update_campaign_archive", { id: String(id), pinned: !current.output.archivePinned });
 	if (failure) return toFormError(failure);
 	revalidatePath(`/campaigns/${id}`);
+	revalidatePath(`/campaigns/${id}/web`);
 	return { ok: true };
 }
 
@@ -170,6 +284,25 @@ export async function unpublishCampaign(id) {
 	revalidatePath("/campaigns");
 	if (!output.deleted) revalidatePath(`/campaigns/${id}`);
 	return { ok: true, deleted: output.deleted };
+}
+
+// The issue's page on the website (update_campaign_archive): a draft's title, description and picture save as they're
+// picked, and a page that's out changes all at once, its content too, once the content check has read it. content: null
+// shows the email's content again.
+export async function updateWebPage(id, values) {
+	const { title, description, image, content, format } = values ?? {};
+	const { failure } = await runDashboardAction("update_campaign_archive", {
+		id: String(id),
+		...(title !== undefined && { title: String(title).slice(0, MAX_SUBJECT_LENGTH) }),
+		...(description !== undefined && { description: String(description).slice(0, MAX_PREVIEW_TEXT_LENGTH) }),
+		...(image !== undefined && { image: String(image) }),
+		...(content !== undefined && { content: content === null ? null : String(content) }),
+		...(format && { format: String(format) }),
+	});
+	if (failure) return toFormError(failure);
+	refresh(id);
+	revalidatePath(`/campaigns/${id}/web`);
+	return { ok: true };
 }
 
 // The page lives at /p/<slug> once the issue goes out. A draft without one gets the subject's slug then.

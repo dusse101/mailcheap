@@ -22,9 +22,11 @@ export default function SenderAddressesPage() {
 						<code>your-newsletter.{sharedDomain}</code>.
 					</p>
 					<p>
-						The address follows your newsletter&apos;s slug, so changing the slug changes it. Replies go to your account&apos;s email,
-						or to the reply-to address you set in the <LinkApp href="/newsletters/sender">newsletter&apos;s settings</LinkApp>. You can
-						keep it as long as you like: the <LinkApp href="/domains">Domains page</LinkApp> shows it as used until you switch.
+						The address follows your newsletter&apos;s slug, so changing the slug changes it. Replies go to the issue&apos;s{" "}
+						<Link href={getHelpHref("writing", "author")}>author</Link>, and replies to your newsletter&apos;s own emails to the
+						default author you pick on the <LinkApp href="/newsletters/sender">Sender page</LinkApp>. Until you add one, they go to
+						your account&apos;s email, or to the reply-to address you set before authors. You can keep the address as long as you like:
+						the <LinkApp href="/domains">Domains page</LinkApp> shows it as used until you switch.
 					</p>
 					<p>
 						While a newsletter sends from it, the <LinkApp href="/">overview</LinkApp> and the send step of a campaign show a short
@@ -48,6 +50,10 @@ export default function SenderAddressesPage() {
 					</>
 				)}
 			</p>
+			<p>
+				A domain can only be in one account. If yours is already taken, the <LinkApp href="/domains">Domains page</LinkApp> says so:
+				add a subdomain instead, like <code>mail.example.com</code>, or another domain.
+			</p>
 			<p>The page then lists the DNS records to add where your domain is managed (your registrar or DNS provider):</p>
 			<ol>
 				<li>
@@ -58,7 +64,9 @@ export default function SenderAddressesPage() {
 				</li>
 				<li>
 					<strong>DMARC</strong>: tells inboxes what to do with emails that fail the checks. Gmail and Yahoo require one from bulk
-					senders. Start with <code>p=none</code>, then move to <code>p=quarantine</code> once your reports look clean.
+					senders. Start with <code>p=none</code>, then move to <code>p=quarantine</code> once your reports look clean. A record on
+					the domain you registered covers its subdomains too: for <code>news.example.com</code>, the page says Found on{" "}
+					<code>example.com</code>.
 				</li>
 			</ol>
 			<p>

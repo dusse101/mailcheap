@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import mongoose from "mongoose";
+import { getBlockedPlanEnd } from "../lib/account-state.js";
 import { createConfirmToken } from "../lib/confirmation.js";
 import { getEventPlan } from "../lib/email-event-rules.js";
+import { formatDate } from "../lib/format.js";
 import { getClickUrl, getOpenUrl } from "../lib/tracking.js";
 import { createUnsubscribeToken } from "../lib/unsubscribe.js";
-import { activate, anonymous, as, callApi, catchNotFound, catchRedirect, form, jsonRequest, platformEmails, signIn, startTestApp } from "./helpers/app.mjs";
+import { activate, addAuthor, anonymous, as, callApi, catchNotFound, catchRedirect, form, jsonRequest, platformEmails, signIn, startTestApp } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 import { published } from "./stubs/qstash.mjs";
 import { sent as sesEmails } from "./stubs/ses.mjs";
@@ -58,12 +60,13 @@ async function customer(email, { contacts = 2, isFree = false } = {}) {
 					archiveEnabled: "on",
 					welcomeEnabled: "on",
 					welcomeSubject: "Welcome",
-					welcomeMarkdown: "Thanks for joining.",
+					welcomeContent: "Thanks for joining.",
 				})
 			)
 		)
 	);
 	user.newsletterId = url.split("/").at(-1);
+	await addAuthor(user);
 	user.slug = slug;
 	if (contacts > 0) {
 		const rows = Array.from({ length: contacts }, (_, index) => ({ email: `reader${index}@${slug}.example.org`, status: "active" }));
@@ -95,6 +98,23 @@ function sentMessages(user, count) {
 			providerMessageId: `provider-${user.accountId}-${index}`,
 			sentAt: new Date(now - 3_600_000),
 			deliveredAt: new Date(now - 3_500_000),
+		}))
+	);
+}
+
+// Emails the account sent at a given time, the first `bounced` of them hard bounced. campaignId: a send of its own.
+function sendsAt(user, { at, sent, bounced, campaignId }) {
+	return m.Message.insertMany(
+		Array.from({ length: sent }, (_, index) => ({
+			kind: "campaign",
+			accountId: user.accountId,
+			newsletterId: user.newsletterId,
+			campaignId: campaignId ?? new mongoose.Types.ObjectId(),
+			contactId: new mongoose.Types.ObjectId(),
+			email: `gone${index}@${user.slug}.example.org`,
+			status: index < bounced ? "bounced" : "delivered",
+			sentAt: at,
+			...(index < bounced && { bouncedAt: at }),
 		}))
 	);
 }
@@ -182,7 +202,13 @@ describe("what blocks an account", () => {
 		assert.match(toAdmins.text, /blocked by a spam trap/);
 		assert.ok(toAdmins.text.includes(`${hard.email} bounced: Hard bounce: 550 5.1.1 This address is a spam trap`));
 		assert.ok(!toOwner.text.includes(hard.email), "the trap's address stays with the admins");
-		assert.ok(toOwner.text.endsWith(`welcome emails included, and imports and changes are off. Chat with us to unblock it.\nhttp://localhost:3000${m.siteExtensions.supportChatPath ?? "/"}`), toOwner.text);
+		const planEnds = formatDate(getBlockedPlanEnd(account.billingPausedAt));
+		assert.ok(
+			toOwner.text.endsWith(
+				`welcome emails included, and imports and changes are off. Your plan isn't billed while it's blocked, and ends on ${planEnds} if it's still blocked then. Chat with us to unblock it.\nhttp://localhost:3000${m.siteExtensions.supportChatPath ?? "/"}`
+			),
+			toOwner.text
+		);
 		assert.ok(!toOwner.text.includes("hello@mailcheap.ai"), "the chat, not email");
 	});
 
@@ -221,7 +247,7 @@ describe("what blocks an account", () => {
 		assert.equal((await loadAccount(user)).status, "active");
 		const paused = await loadCampaign(user, warned);
 		assert.deepEqual([paused.status, paused.pauseCode], ["paused", "high_rates"]);
-		assert.match(paused.pauseReason, /^Bounce rate of 5.00% on this campaign \(limit 2.00%\)\. Check where these contacts came from before you resume/);
+		assert.match(paused.pauseReason, /^Bounce rate of 5.00% on this campaign \(limit 2.50%\)\. Check where these contacts came from before you resume/);
 		assert.equal((await loadCampaign(user, other)).status, "sent");
 		const emails = platformEmails.slice(emailsBefore);
 		assert.deepEqual(emails.map(({ to, subject }) => [to, subject]), [[["campaign-warning@example.com"], "[MailCheap] Campaign paused"]], "no admin email");
@@ -348,11 +374,74 @@ describe("unblocking", () => {
 		await m.health.checkAccountHealth(user.accountId, { isUrgent: true });
 		assert.equal((await loadAccount(user)).status, "paused", "rates back under the limits don't lift it");
 
+		const emailsBefore = platformEmails.length;
 		assert.deepEqual(await as(admin, () => m.admin.unblockAccountAction(String(user.accountId))), { ok: true });
 		assert.equal((await loadCampaign(user, id)).status, "paused");
+		const unblocked = platformEmails.slice(emailsBefore).filter(({ subject }) => subject === "[MailCheap] Account unblocked");
+		assert.deepEqual(
+			unblocked.map(({ to }) => to),
+			[["unblock@example.com"]],
+			"only its owner hears of it"
+		);
+		const renewal = new Date(user.account.currentPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+		assert.ok(
+			unblocked[0].text.startsWith(
+				`Account unblocked\nYour account can send again. The campaign the block paused waits for you to resume it from its page. Your plan is billed again from its renewal on ${renewal}.\nhttp://localhost:3000/campaigns`
+			),
+			unblocked[0].text
+		);
 		assert.deepEqual(await as(user, () => m.campaigns.resumeCampaign(id)), { ok: true });
 		assert.equal(sentCount(await runJobs(user)), 1);
 		assert.equal((await loadCampaign(user, id)).status, "sent");
+	});
+
+	test("a send that blocked its account goes on once unblocked: the bounces before don't count again", async () => {
+		const user = await customer("resume-after-block@example.com", { contacts: 3 });
+		const id = await draft(user);
+		assert.deepEqual(await as(user, () => m.campaigns.sendCampaign(id, {})), { ok: true });
+		await m.Campaign.updateOne({ accountId: user.accountId, _id: id }, { $set: { "stats.sent": 50, "stats.bounced": 11 } });
+		assert.equal(sentCount(await runJobs(user)), 0);
+		assert.deepEqual([(await loadAccount(user)).pausedBy, (await loadCampaign(user, id)).pauseCode], ["campaign", "account_blocked"]);
+
+		assert.deepEqual(await as(admin, () => m.admin.unblockAccountAction(String(user.accountId))), { ok: true });
+		assert.deepEqual(await as(user, () => m.campaigns.resumeCampaign(id)), { ok: true });
+		assert.equal(sentCount(await runJobs(user)), 3, "11 bounces out of its first 50 emails don't stop the rest");
+		assert.equal((await loadAccount(user)).status, "active");
+		const sent = await loadCampaign(user, id);
+		assert.deepEqual([sent.status, sent.stats.bounced], ["sent", 11], "its report keeps them");
+	});
+
+	test("once unblocked, a send's new bounces still block the account", async () => {
+		const user = await customer("bounces-after-unblock@example.com", { contacts: 3 });
+		const id = await draft(user);
+		assert.deepEqual(await as(user, () => m.campaigns.sendCampaign(id, {})), { ok: true });
+		await m.Campaign.updateOne({ accountId: user.accountId, _id: id }, { $set: { "stats.sent": 50, "stats.bounced": 11 } });
+		await runJobs(user);
+		assert.deepEqual(await as(admin, () => m.admin.unblockAccountAction(String(user.accountId))), { ok: true });
+
+		await sendsAt(user, { at: new Date(), sent: 20, bounced: 10, campaignId: new mongoose.Types.ObjectId(id) });
+		assert.deepEqual(await as(user, () => m.campaigns.resumeCampaign(id)), { ok: true });
+		assert.equal(sentCount(await runJobs(user)), 0);
+		const account = await loadAccount(user);
+		assert.deepEqual([account.status, account.pausedBy, account.pauseReason], ["paused", "campaign", "Bounce rate of 50.00% on a campaign (limit 5.00%)"]);
+	});
+
+	test("once unblocked, the 7-day check adds up only the emails sent since", async () => {
+		const user = await customer("week-after-unblock@example.com", { contacts: 0 });
+		await sendsAt(user, { at: new Date(Date.now() - 3_600_000), sent: 50, bounced: 11 });
+		await m.health.checkAccountHealth(user.accountId, { isUrgent: true });
+		assert.equal((await loadAccount(user)).pauseReason, "Bounce rate of 22.00% over the last 7 days (limit 5.00%)");
+		assert.deepEqual(await as(admin, () => m.admin.unblockAccountAction(String(user.accountId))), { ok: true });
+
+		await sendsAt(user, { at: new Date(), sent: 100, bounced: 1 });
+		await m.health.checkAccountHealth(user.accountId, { isUrgent: true });
+		assert.equal((await loadAccount(user)).status, "active", "1 bounce since, not 12 out of 150");
+
+		await sendsAt(user, { at: new Date(), sent: 20, bounced: 10 });
+		await m.health.checkAccountHealth(user.accountId, { isUrgent: true });
+		const account = await loadAccount(user);
+		assert.deepEqual([account.status, account.pausedBy], ["paused", "rates"]);
+		assert.equal(account.pauseReason, "Bounce rate of 9.17% since the account was unblocked (limit 5.00%)");
 	});
 });
 

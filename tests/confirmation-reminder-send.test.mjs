@@ -185,13 +185,15 @@ serial("a pending contact gets one reminder at 24 hours, and not before, after a
 	assert.equal(listed.status, 200, JSON.stringify(listed.body));
 	assert.ok(listed.body.emails.some((email) => email.kind === CONFIRMATION_REMINDER_KIND));
 
-	const original = sesEmails.find((message) => message.to === "due@example.org" && message.subject.startsWith("Confirm "));
 	const reminder = remindersTo("due@example.org", before)[0];
 	const reminderToken = tokenOf(reminder);
 	assert.ok(verifyConfirmToken(reminderToken));
-	assert.notEqual(reminderToken, tokenOf(original));
 	const stamped = JSON.parse(Buffer.from(reminderToken.split(".")[0], "base64url").toString());
+	const confirmation = await m.Message.findOne({ accountId: user.accountId, contactId: due._id, kind: "confirmation" }).lean();
+	// The token's time is the sending message's createdAt, to the second, so a reminder minted in the same second as
+	// the confirmation email carries the same token. It still has to be a new link, not that email's stored one.
 	assert.ok(Math.abs(stamped.t * 1000 - Date.now()) < 60_000, "the reminder mints its own link");
+	assert.ok(Math.abs(stamped.t * 1000 - new Date(confirmation.createdAt).getTime()) > 60_000);
 	assert.match(reminder.subject, /^Reminder: confirm your subscription to remind-window news$/);
 	assert.match(reminder.text, /only reminder/);
 	assert.equal(/best tacos/i.test(reminder.text), false);
@@ -684,13 +686,12 @@ serial("the brand's reminder goes out with its copy", async () => {
 	const [email] = sesEmails.slice(before);
 	assert.equal(email.subject, "Your Taco & Tell signup is still on the porch");
 	assert.match(email.text, /So close\./);
-	assert.match(email.text, /signup isn’t confirmed yet\. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser\./);
-	assert.match(email.text, /Open my confirmation page \(https:\/\/[^)\s]+\/confirm\?token=/);
+	assert.match(email.text, /signup isn’t confirmed yet\. Tap the button below and you’re in\./);
+	assert.match(email.text, /Confirm my subscription \(https:\/\/[^)\s]+\/confirm\?token=/);
 	assert.match(email.text, /red light on 380/);
 	assert.match(email.text, /Didn’t sign up\? Ignore this\. You stay off the list, and this is the last nudge you’ll get from us\./);
-	assert.match(email.html, />Open my confirmation page</);
+	assert.match(email.html, />Confirm my subscription</);
 	assert.equal(/one button short/i.test(`${email.text}\n${email.html}`), false);
-	assert.equal(/Confirm my subscription/.test(`${email.text}\n${email.html}`), false);
 	assert.match(email.html, /You&#39;re not on the list until you confirm\. This is the only reminder\.|You're not on the list until you confirm\. This is the only reminder\./);
 	assert.ok(verifyConfirmToken(tokenOf(email)));
 });

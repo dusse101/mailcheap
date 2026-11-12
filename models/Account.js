@@ -18,6 +18,12 @@ const accountSchema = new mongoose.Schema(
 		currentPeriodStart: { type: Date },
 		currentPeriodEnd: { type: Date },
 		cancelAt: { type: Date },
+		// When MailCheap paused the plan's billing because the account is blocked (lib/billing-pause.js): Stripe keeps the
+		// subscription active and voids its renewals until unblocking resumes it. A pause set by hand in Stripe isn't here.
+		billingPausedAt: { type: Date },
+		// While the hourly check ends the plan of an account blocked too long (lib/billing-pause.js): unblocking waits
+		// for it, so a plan never ends on an unblocked account.
+		planEndingAt: { type: Date },
 		// Emails sent this month of the paid period (lib/usage-period.js): every kind counts. welcomePausedAt: when the
 		// month's first welcome email was skipped for want of emails left, which told the owner; a new month clears it.
 		usage: {
@@ -38,7 +44,8 @@ const accountSchema = new mongoose.Schema(
 		// send's slice (lib/first-send.js). trap: a bounce from a spam trap. ses, postshiba: the provider stopped the
 		// account's tenant. gmail: Gmail's spam rate in Google Postmaster Tools (lib/postmaster.js).
 		pausedBy: { type: String, enum: BLOCK_SOURCES },
-		// The last time an admin unblocked it: Gmail's data on the days up to then doesn't block it again.
+		// The last time an admin unblocked it: the bounces and complaints of the emails sent before, and Gmail's data on the
+		// days up to then, don't block it again.
 		unblockedAt: { type: Date },
 		// The account's SES tenant and configuration set, created when its plan starts (lib/email-provider/ses.js).
 		ses: {
@@ -102,6 +109,9 @@ const accountSchema = new mongoose.Schema(
 		summary: {
 			timeZone: { type: String },
 		},
+		// Where its owner's test emails go when they don't name addresses, saved from a test (lib/test-recipients.js):
+		// without, the owner's own address. A team member's are on their membership.
+		testRecipients: { type: [String], default: undefined },
 		// The fields its contacts can hold besides a first name and tags, shared by its newsletters (lib/contact-fields.js).
 		// Each contact keeps its values under fields.<key>; deleting a field here leaves them on the contacts.
 		contactFields: {
