@@ -40,14 +40,12 @@ test("unsubscribe and confirmation links can't stand in for each other", () => {
 	assert.equal(verifyUnsubscribeToken(createConfirmToken(REFERENCE)), null);
 });
 
-// The link never confirms by itself. The button posts to /api/confirm; the page does not run a script that confirms.
-test("the confirm page posts to /api/confirm only when its button is pressed", () => {
+// Posted without the script, from a page that sends no referrer, a form would come with Origin: null, which Next.js
+// refuses with an error.
+test("the confirm page has no form to post before its script runs, only the button", () => {
 	const html = renderToStaticMarkup(createElement(FormConfirm, { token: "abc", newsletterName: "Field notes", fromEmail: "hi@example.com" }));
-	assert.match(html, /<form\b[^>]*method="post"/);
-	assert.match(html, /action="\/api\/confirm"/);
-	assert.match(html, /name="token" value="abc"/);
-	assert.match(html, /<button[^>]*type="submit"[^>]*>Confirm my subscription<\/button>/);
-	assert.doesNotMatch(html, /<script/);
+	assert.doesNotMatch(html, /<form/);
+	assert.match(html, /<button[^>]*>Confirm my subscription<\/button>/);
 });
 
 test("the confirmation email carries a clean link in both versions", () => {

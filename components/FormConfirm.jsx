@@ -1,15 +1,24 @@
 "use client";
 
-import { MailCheck } from "lucide-react";
+import { startTransition, useActionState, useEffect } from "react";
+import { Link2Off, Loader2, MailCheck } from "lucide-react";
+import { confirmSubscription } from "@/app/confirm/actions";
 import CardNotice from "@/components/CardNotice";
 import { Button } from "@/components/ui/button";
 
-// Only the button's POST confirms. It posts to /api/confirm, not a server action: without JavaScript,
-// Next.js accepts the action and then never sends the page back.
-export default function FormConfirm({ token, newsletterName, fromName, fromEmail, archiveUrl, outcome = "form" }) {
-	if (outcome === "done") {
+// Confirms once the page's script runs, so a link scanner that only loads the page doesn't. No <form>: posted without
+// the script from this page, which sends no referrer, it would come with Origin: null, which Next.js refuses with an
+// error, and some scanners post forms that way.
+export default function FormConfirm({ token, newsletterName, fromName, fromEmail, archiveUrl }) {
+	const [state, confirm, isPending] = useActionState(confirmSubscription.bind(null, token), null);
+
+	useEffect(() => {
+		startTransition(confirm);
+	}, [confirm]);
+
+	if (state?.ok) {
 		return (
-			<CardNotice icon={MailCheck} tone="success" title="You're in" focusTitle>
+			<CardNotice icon={MailCheck} tone="success" title="You're in">
 				The next issue of {newsletterName} comes from{" "}
 				<span className="font-medium text-foreground">{fromName || fromEmail}</span>
 				{fromName && ` (${fromEmail})`}. If it lands in Promotions, drag it to Primary.
@@ -22,15 +31,24 @@ export default function FormConfirm({ token, newsletterName, fromName, fromEmail
 		);
 	}
 
+	if (state?.error) {
+		return (
+			<CardNotice icon={Link2Off} title="This link doesn't work">
+				It may be older than 30 days. Sign up again and use the newest confirmation email.
+			</CardNotice>
+		);
+	}
+
 	return (
-		<CardNotice icon={MailCheck} title={`Confirm your subscription to ${newsletterName}`}>
+		<CardNotice
+			icon={isPending ? Loader2 : MailCheck}
+			spin={isPending}
+			title={`Confirm your subscription to ${newsletterName}`}
+		>
 			One click and the next issue lands in your inbox.
-			<form method="post" action="/api/confirm" className="mt-6">
-				<input type="hidden" name="token" value={token} />
-				<Button type="submit" size="lg" className="w-full">
-					Confirm my subscription
-				</Button>
-			</form>
+			<Button size="lg" disabled={isPending} onClick={() => startTransition(confirm)} className="mt-6 w-full">
+				{isPending ? "Confirming…" : "Confirm my subscription"}
+			</Button>
 		</CardNotice>
 	);
 }

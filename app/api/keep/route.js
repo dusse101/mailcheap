@@ -18,7 +18,7 @@ function redirectToPage(request, token) {
 	return response;
 }
 
-// Same rule as app/api/confirm/route.js. Next.js rejects a server-action POST whose Origin is the string "null".
+// Next.js rejects a server-action POST whose Origin is the string "null".
 // This route is an ordinary form POST instead. A missing Origin is allowed, as Next allows it for non-browser
 // clients; "null" and any other host are not, so another site can't submit the button.
 function sameOrigin(request) {

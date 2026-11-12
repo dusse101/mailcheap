@@ -6,8 +6,8 @@ import { createConfirmToken } from "../lib/confirmation.js";
 import { activate, anonymous, as, callApi, catchRedirect, form, signIn, startTestApp } from "./helpers/app.mjs";
 import { flushAfter } from "./stubs/next-server.mjs";
 
-// Fork: the signup funnel tacoandtell.com's daily report reads. Opening the confirm page notes confirmOpenedAt once and
-// still confirms nobody; the site's form passes the page it's on as signupPath; GET /api/signup-funnel counts each step
+// Fork: the signup funnel tacoandtell.com's daily report reads. Opening the confirm page notes confirmOpenedAt once,
+// before its script confirms; the site's form passes the page it's on as signupPath; GET /api/signup-funnel counts each step
 // per day or for all time and lists who is still pending, for MAILCHEAP_FUNNEL_KEY only: no API key, the read key included.
 let app;
 let m;
@@ -37,7 +37,6 @@ before(async () => {
 		newsletters: await import("../app/(app)/newsletters/actions.js"),
 		apiKeys: await import("../app/(app)/api-keys/actions.js"),
 		confirm: await import("../app/confirm/actions.js"),
-		confirmRoute: await import("../app/api/confirm/route.js"),
 		confirmPage: await import("../app/confirm/page.js"),
 		funnelRoute: await import("../app/api/signup-funnel/route.js"),
 		funnel: await import("../lib/signup-funnel.js"),
@@ -133,10 +132,10 @@ describe("the page a signup came from", () => {
 });
 
 describe("opening the confirm page", () => {
-	test("notes the first open of a pending contact, keeps it on a refresh, and confirms nobody", async () => {
+	test("notes the first open of a pending contact, keeps it on a refresh, and rendering it confirms nobody", async () => {
 		const contact = await contactIn(user.newsletterId, { email: "opens@example.com", status: "pending" });
 		const token = tokenFor(contact);
-		assert.match(await openConfirmPage(token), /action="\/api\/confirm"/);
+		assert.match(await openConfirmPage(token), /Confirm my subscription/);
 		const first = await load(contact);
 		assert.ok(first.confirmOpenedAt instanceof Date);
 		assert.equal(first.status, "pending");
@@ -147,27 +146,14 @@ describe("opening the confirm page", () => {
 		const refreshed = await load(contact);
 		assert.deepEqual(refreshed.confirmOpenedAt, first.confirmOpenedAt, "a refresh keeps the first open");
 		assert.equal(refreshed.status, "pending");
-
-		const opened = await m.confirmRoute.GET(new Request(`http://localhost:3000/api/confirm?token=${encodeURIComponent(token)}`));
-		assert.equal(opened.status, 303);
-		assert.equal((await load(contact)).status, "pending", "GET still confirms nobody");
 	});
 
-	test("the button still confirms, and the page it comes back to changes nothing", async () => {
+	test("the page's confirm still confirms, and opening the page again changes nothing", async () => {
 		const contact = await contactIn(user.newsletterId, { email: "presses@example.com", status: "pending" });
 		const token = tokenFor(contact);
 		await openConfirmPage(token);
 		const opened = (await load(contact)).confirmOpenedAt;
-		const posted = await anonymous(() =>
-			m.confirmRoute.POST(
-				new Request("http://localhost:3000/api/confirm", {
-					method: "POST",
-					headers: { origin: "http://localhost:3000" },
-					body: new URLSearchParams({ token }),
-				})
-			)
-		);
-		assert.equal(posted.status, 303);
+		assert.deepEqual(await anonymous(() => m.confirm.confirmSubscription(token)), { ok: true });
 		await flushAfter();
 		const confirmed = await load(contact);
 		assert.equal(confirmed.status, "active");

@@ -686,13 +686,12 @@ serial("the brand's reminder goes out with its copy", async () => {
 	const [email] = sesEmails.slice(before);
 	assert.equal(email.subject, "Your Taco & Tell signup is still on the porch");
 	assert.match(email.text, /So close\./);
-	assert.match(email.text, /signup isn’t confirmed yet\. Tap the button below to open your confirmation page, then tap “Yes, subscribe me” in your browser\./);
-	assert.match(email.text, /Open my confirmation page \(https:\/\/[^)\s]+\/confirm\?token=/);
+	assert.match(email.text, /signup isn’t confirmed yet\. Tap the button below and you’re in\./);
+	assert.match(email.text, /Confirm my subscription \(https:\/\/[^)\s]+\/confirm\?token=/);
 	assert.match(email.text, /red light on 380/);
 	assert.match(email.text, /Didn’t sign up\? Ignore this\. You stay off the list, and this is the last nudge you’ll get from us\./);
-	assert.match(email.html, />Open my confirmation page</);
+	assert.match(email.html, />Confirm my subscription</);
 	assert.equal(/one button short/i.test(`${email.text}\n${email.html}`), false);
-	assert.equal(/Confirm my subscription/.test(`${email.text}\n${email.html}`), false);
 	assert.match(email.html, /You&#39;re not on the list until you confirm\. This is the only reminder\.|You're not on the list until you confirm\. This is the only reminder\./);
 	assert.ok(verifyConfirmToken(tokenOf(email)));
 });

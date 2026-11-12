@@ -38,7 +38,6 @@ const PUBLIC_PATHS = [
 	/^\/p\//,
 	/^\/archive\//,
 	/^\/api\/unsubscribe$/,
-	/^\/api\/confirm$/,
 	/^\/api\/keep$/,
 	/^\/api\/views$/,
 	/^\/summary\/[A-Za-z0-9_.-]+$/,
@@ -58,7 +57,6 @@ const PUBLIC_PATHS = [
 const ARCHIVE_HOST_PATHS = [
 	/^\/unsubscribe$/,
 	/^\/api\/unsubscribe$/,
-	/^\/api\/confirm$/,
 	/^\/api\/keep$/,
 	/^\/api\/views$/,
 	/^\/api\/website-code$/,
