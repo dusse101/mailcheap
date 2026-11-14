@@ -238,12 +238,12 @@ test("who the backfill can reach", () => {
 	);
 });
 
-test("vercel.json runs only the isolated reminder route, daily at 7:00 in Chicago", () => {
+test("vercel.json runs only the isolated reminder route, daily at 5:45 in Chicago", () => {
 	const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 	assert.equal(config.crons, undefined, "a crons entry would run in UTC, and run the route a second time");
 	assert.deepEqual(config.schedules, {
 		"confirmation-reminders": {
-			schedule: "0 7 * * *",
+			schedule: "45 5 * * *",
 			timezone: "America/Chicago",
 			path: "/api/cron/confirmation-reminders",
 			// Schedules default to POST, and withCronSecret only exports GET.
@@ -258,16 +258,34 @@ test("the daily route's only imports are the reminder and the secret check", () 
 	assert.deepEqual([...source.matchAll(/from "([^"]+)"/g)].map(([, from]) => from).sort(), ["@/lib/confirmation-reminder", "@/lib/cron"]);
 });
 
-test("a run at about 7:00 in Chicago always falls inside the reminder window, across daylight saving", () => {
+test("a run at about 5:45 in Chicago always falls inside the reminder window, across daylight saving", () => {
 	const HOUR_MS = 60 * 60 * 1000;
-	const chicagoHour = (at) =>
-		new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(at);
-	// 7:00 in Chicago is 12:00 UTC in summer and 13:00 UTC in winter. Each run starts as late or as early as the 15 minute jitter allows.
+	const MINUTE_MS = 60 * 1000;
+	const chicagoClock = (at) => {
+		const parts = Object.fromEntries(
+			new Intl.DateTimeFormat("en-US", {
+				timeZone: "America/Chicago",
+				hour: "numeric",
+				minute: "numeric",
+				hourCycle: "h23",
+			})
+				.formatToParts(at)
+				.filter((part) => part.type === "hour" || part.type === "minute")
+				.map((part) => [part.type, Number(part.value)])
+		);
+		return parts;
+	};
+	// 5:45 in Chicago is 10:45 UTC in summer and 11:45 UTC in winter. Each run starts as late or as early as the 15 minute jitter allows.
 	const runs = [];
 	for (let day = 0; day < 400; day++) {
 		const midnight = Date.UTC(2026, 0, 1 + day);
-		const start = [12, 13].map((hour) => midnight + hour * HOUR_MS).find((at) => chicagoHour(at) === "7");
-		runs.push(start + (day % 2 ? 15 * 60 * 1000 : 0));
+		const start = [10, 11]
+			.map((hour) => midnight + hour * HOUR_MS + 45 * MINUTE_MS)
+			.find((at) => {
+				const { hour, minute } = chicagoClock(at);
+				return hour === 5 && minute === 45;
+			});
+		runs.push(start + (day % 2 ? 15 * MINUTE_MS : 0));
 	}
 	const fewest = (start) => runs.filter((at) => at >= start && at < start + CONFIRMATION_REMINDER_GRACE_MS).length;
 	let least = Infinity;
